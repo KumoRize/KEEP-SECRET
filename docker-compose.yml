@@ -1,0 +1,32 @@
+# Local full stack: docker compose up --build  (uses the mock provider unless you add keys to .env)
+services:
+  db:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: creator, POSTGRES_PASSWORD: creator, POSTGRES_DB: creator }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U creator"], interval: 5s, retries: 10 }
+  redis:
+    image: redis:7-alpine
+  api:
+    build: .
+    env_file: [.env]
+    environment: &env
+      NODE_ENV: development
+      DATABASE_URL: postgres://creator:creator@db:5432/creator
+      REDIS_URL: redis://redis:6379
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_DIR: /data
+      PUBLIC_URL: http://localhost:8080
+    ports: ["8080:8080"]
+    volumes: [files:/data]
+    depends_on: { db: { condition: service_healthy }, redis: { condition: service_started } }
+  worker:
+    build: .
+    command: ["node", "dist/worker.js"]
+    env_file: [.env]
+    environment: *env
+    volumes: [files:/data]
+    depends_on: { db: { condition: service_healthy } }
+volumes:
+  pgdata:
+  files:
