@@ -13,7 +13,7 @@ Users type one prompt. The orchestrator works out what they want (image, video, 
 
 ## Quick start
 ```bash
-cp .env.example .env              # fill the three secrets; set ENABLE_MOCK_PROVIDER=true to try it without AI keys
+cp .env.example .env              # fill the three secrets; to try it locally set ENABLE_MOCK_PROVIDER=true and MAIL_DRIVER=console (links appear in the API log)
 docker compose up --build         # api on :8080 plus worker, Postgres and Redis
 # or run it locally:
 npm ci && npm run migrate && npm run dev:api   # and: npm run dev:web, npm run worker -w apps/api
@@ -35,6 +35,8 @@ Emails listed in `ADMIN_EMAILS` become admins when they register.
 | Pro | ₹999 | 3,600 | all 7 | 10s | yes |
 | Studio | ₹1,999 | 7,600 | all 7 | 10s | yes |
 
+Each plan's storage limit is enforced: once a user's files reach it, new generations are refused until they delete files or upgrade.
+
 Credit packs (₹199/500, ₹499/1,500, ₹999/3,500) never expire. Subscription credits reset each billing cycle and are spent first. Price formula: `credits = ceil(usd × USD_INR × PRICE_MARKUP / INR_PER_CREDIT_COST)`, for example a $0.05 image costs 27 credits.
 
 ## Adding a provider
@@ -42,6 +44,7 @@ Write a `ProviderAdapter` in `apps/api/src/modules/providers/adapters/` (fill in
 
 ## Security
 - Provider keys are read only from server environment variables. The admin API reports whether a key is set, never the key itself, and logs redact secrets.
+- New accounts must verify their email before generating (`REQUIRE_EMAIL_VERIFICATION`), which stops people farming free credits with throwaway addresses. Verification and password-reset links are single-use, stored only as hashes, and expire after 24 hours and 1 hour respectively. Requesting a reset gives the same response whether or not the account exists, and a completed reset signs out every session. Email goes through the Resend API; set `MAIL_DRIVER=console` to log messages instead during development.
 - Passwords use scrypt. Access JWTs last 15 minutes and are kept in memory on the client. Refresh tokens are httpOnly, SameSite=Strict cookies that rotate on each use; reusing an old one revokes the whole token family.
 - Rate limits: 300 requests/min per IP overall, 10/min on auth, 20 generations/min per user, on top of the per-plan concurrency and daily caps.
 - Generated HTML is served under `CSP: sandbox` (an opaque origin) and shown in sandboxed iframes. File paths from code generation are checked to block path traversal.
@@ -55,7 +58,7 @@ Write a `ProviderAdapter` in `apps/api/src/modules/providers/adapters/` (fill in
 - **Razorpay**: create the 4 plans in the dashboard, put their IDs in `RAZORPAY_PLAN_IDS`, and subscribe the webhook to `payment.captured`, `subscription.*` and `order.paid`.
 
 ## Not included yet
-Email verification and password reset (needs a mail provider), GST invoices, per-user storage quota enforcement (`storageGb` is shown but not enforced), and splitting long video jobs into submit/poll steps (today a running job occupies a worker slot).
+GST invoices, and splitting long video jobs into submit/poll steps (today a running job occupies a worker slot).
 
 ## Tests
-`npm test` runs 51 unit and API tests against a real Postgres. They cover intent detection, wallet invariants (including concurrent holds), fallback, refunds, idempotency, quote tampering, plan gates, refresh-token reuse, webhooks and admin actions.
+`npm test` runs 57 unit and API tests against a real Postgres. They cover intent detection, wallet invariants (including concurrent holds), fallback, refunds, idempotency, quote tampering, plan gates, refresh-token reuse, webhooks, admin actions, email verification, password reset and storage quotas.

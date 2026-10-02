@@ -41,7 +41,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
         {error && <p className="error" role="alert">{error}</p>}
         <button className="primary" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Sign up free'}</button>
         {mode === 'login'
-          ? <p className="muted">New here? <Link to="/register">Create an account</Link></p>
+          ? <p className="muted"><Link to="/forgot-password">Forgot password?</Link> · New here? <Link to="/register">Create an account</Link></p>
           : <p className="muted">Have an account? <Link to="/login">Log in</Link></p>}
       </form>
     </div>

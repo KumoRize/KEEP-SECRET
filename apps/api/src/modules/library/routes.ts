@@ -4,6 +4,7 @@ import { pool } from '../../db/pool.js';
 import { notFound } from '../../lib/errors.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { parse } from '../../middleware/validate.js';
+import { getPlan } from '../billing/plans.js';
 import { storage } from '../storage/storage.js';
 
 export const libraryRoutes = Router();
@@ -71,5 +72,5 @@ libraryRoutes.get('/usage', async (req, res) => {
   const { rows: [storageRow] } = await pool.query<{ bytes: number }>(
     'SELECT COALESCE(sum(size_bytes), 0)::bigint AS bytes FROM assets WHERE user_id = $1', [req.user!.id],
   );
-  res.json({ last30Days: rows, storageBytes: storageRow!.bytes });
+  res.json({ last30Days: rows, storageBytes: storageRow!.bytes, storageLimitBytes: getPlan(req.user!.plan_id).storageGb * 1024 ** 3 });
 });

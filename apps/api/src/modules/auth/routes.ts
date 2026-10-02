@@ -8,6 +8,7 @@ import { parse } from '../../middleware/validate.js';
 import { getBalance } from '../billing/wallet.js';
 import { getPlan } from '../billing/plans.js';
 import * as auth from './service.js';
+import { requestPasswordReset, resetPassword, sendVerificationEmail, verifyEmail } from './emailTokens.js';
 
 const COOKIE = 'rt';
 const credentials = z.object({
@@ -66,5 +67,36 @@ authRoutes.post('/logout', async (req, res) => {
 
 authRoutes.get('/me', requireAuth, async (req, res) => {
   const u = req.user!;
-  res.json({ user: { id: u.id, email: u.email, role: u.role, plan: getPlan(u.plan_id) }, balance: await getBalance(u.id) });
+  res.json({
+    user: { id: u.id, email: u.email, role: u.role, emailVerified: Boolean(u.email_verified_at), plan: getPlan(u.plan_id) },
+    balance: await getBalance(u.id),
+  });
+});
+
+const tokenBody = z.object({ token: z.string().min(20).max(200) });
+const emailLimiter = rateLimit({ name: 'email', limit: 5, windowSec: 3600 });
+
+authRoutes.post('/verify-email', rateLimit({ name: 'verify', limit: 20, windowSec: 60 }), async (req, res) => {
+  await verifyEmail(parse(tokenBody, req.body).token);
+  res.json({ ok: true });
+});
+
+authRoutes.post('/verify-email/resend', requireAuth, emailLimiter, async (req, res) => {
+  if (req.user!.email_verified_at) throw badRequest('Email is already verified');
+  await sendVerificationEmail(req.user!);
+  res.status(202).json({ ok: true });
+});
+
+authRoutes.post('/password/forgot', rateLimit({
+  name: 'forgot', limit: 5, windowSec: 3600, key: (req) => `${req.ip}:${String(req.body?.email ?? '').toLowerCase()}`,
+}), async (req, res) => {
+  const { email } = parse(z.object({ email: z.email().max(254) }), req.body);
+  await requestPasswordReset(email);
+  res.status(202).json({ ok: true }); // same response whether or not the account exists
+});
+
+authRoutes.post('/password/reset', rateLimit({ name: 'reset', limit: 10, windowSec: 60 }), async (req, res) => {
+  const b = parse(tokenBody.extend({ password: credentials.shape.password }), req.body);
+  await resetPassword(b.token, b.password);
+  res.json({ ok: true });
 });

@@ -10,6 +10,7 @@ export interface AuthUser {
   role: 'user' | 'admin';
   plan_id: string;
   status: string;
+  email_verified_at: Date | null;
 }
 
 declare global {
@@ -37,7 +38,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   } catch {
     throw unauthorized('Invalid or expired token');
   }
-  const { rows } = await pool.query<AuthUser>('SELECT id, email, role, plan_id, status FROM users WHERE id = $1', [sub]);
+  const { rows } = await pool.query<AuthUser>('SELECT id, email, role, plan_id, status, email_verified_at FROM users WHERE id = $1', [sub]);
   const user = rows[0];
   if (!user) throw unauthorized();
   if (user.status !== 'active') throw forbidden('Account suspended');
