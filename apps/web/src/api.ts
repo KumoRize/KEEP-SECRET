@@ -3,7 +3,7 @@ export interface Plan {
   dailyGenerations: number; maxConcurrent: number; maxVideoSeconds: number; commercialUse: boolean;
 }
 export interface Balance { subscription: number; purchased: number; total: number }
-export interface Me { user: { id: string; email: string; role: string; plan: Plan }; balance: Balance }
+export interface Me { user: { id: string; email: string; role: string; emailVerified: boolean; plan: Plan }; balance: Balance }
 export interface Asset { id: string; filename: string; content_type: string; size_bytes: number; url: string; previewUrl: string }
 export interface Generation {
   id: string; prompt: string; modality: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';

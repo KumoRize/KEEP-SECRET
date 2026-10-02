@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { config } from '../../config.js';
 import { pool, tx } from '../../db/pool.js';
 import { AppError, badRequest, conflict, limitExceeded, notFound } from '../../lib/errors.js';
 import { getPlan } from '../billing/plans.js';
@@ -41,11 +42,14 @@ export async function createGeneration(
   try {
     const generation = await tx(async (c) => {
       // Lock the user row so concurrency/daily checks and the credit hold are serialised per user.
-      const { rows: users } = await c.query<{ plan_id: string; status: string }>(
-        'SELECT plan_id, status FROM users WHERE id = $1 FOR UPDATE', [userId],
+      const { rows: users } = await c.query<{ plan_id: string; status: string; email_verified_at: Date | null }>(
+        'SELECT plan_id, status, email_verified_at FROM users WHERE id = $1 FOR UPDATE', [userId],
       );
       const user = users[0];
       if (!user || user.status !== 'active') throw new AppError(403, 'account_inactive', 'Account is not active');
+      if (config.REQUIRE_EMAIL_VERIFICATION && !user.email_verified_at) {
+        throw new AppError(403, 'email_not_verified', 'Verify your email address before generating');
+      }
       const plan = getPlan(user.plan_id);
       if (!plan.modalities.includes(quote.modality)) {
         throw new AppError(403, 'plan_upgrade_required', `${quote.modality} is not included in your plan`);
@@ -62,6 +66,16 @@ export async function createGeneration(
       }
       if (counts!.today >= plan.dailyGenerations) {
         throw limitExceeded(`Daily limit of ${plan.dailyGenerations} generations reached`, { limit: plan.dailyGenerations });
+      }
+      // Checked before the job starts so we never pay a provider for output we cannot store.
+      // One generation may overshoot the quota slightly; the next one is blocked.
+      const { rows: [usage] } = await c.query<{ bytes: number }>(
+        'SELECT COALESCE(sum(size_bytes), 0)::bigint AS bytes FROM assets WHERE user_id = $1', [userId],
+      );
+      if (usage!.bytes >= plan.storageGb * 1024 ** 3) {
+        throw new AppError(403, 'storage_full', `Storage limit of ${plan.storageGb} GB reached. Delete files or upgrade.`, {
+          usedBytes: usage!.bytes, limitBytes: plan.storageGb * 1024 ** 3,
+        });
       }
       if (input.projectId) {
         const { rowCount } = await c.query('SELECT 1 FROM projects WHERE id = $1 AND user_id = $2', [input.projectId, userId]);

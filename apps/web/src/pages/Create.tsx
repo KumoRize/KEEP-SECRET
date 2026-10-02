@@ -98,7 +98,8 @@ export function CreatePage() {
         {error && (
           <p className="error" role="alert">
             {error.message}{' '}
-            {(error.code === 'plan_upgrade_required' || error.code === 'insufficient_credits') && <Link to="/billing">Upgrade or buy credits</Link>}
+            {['plan_upgrade_required', 'insufficient_credits', 'storage_full'].includes(error.code) && <Link to="/billing">Upgrade or buy credits</Link>}
+            {error.code === 'email_not_verified' && 'Check your inbox, or use "Resend email" at the top of the page.'}
           </p>
         )}
       </section>

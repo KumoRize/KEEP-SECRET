@@ -6,6 +6,8 @@ import { AppError, conflict, unauthorized } from '../../lib/errors.js';
 import { signAccessToken } from '../../middleware/auth.js';
 import { PLANS } from '../billing/plans.js';
 import { resetSubscriptionCredits } from '../billing/wallet.js';
+import { logger } from '../../lib/logger.js';
+import { sendVerificationEmail } from './emailTokens.js';
 
 export interface PublicUser {
   id: string;
@@ -41,6 +43,8 @@ export async function register(email: string, password: string, name: string): P
       await c.query("UPDATE users SET plan_renews_at = date_trunc('month', now()) + interval '1 month' WHERE id = $1", [u.id]);
       return u;
     });
+    // Registration must not fail because the mail provider is down; the user can resend from the app.
+    await sendVerificationEmail(user).catch((err) => logger.error({ err }, 'verification email failed'));
     return { user, ...(await issueTokens(user.id)) };
   } catch (err) {
     if ((err as { code?: string }).code === '23505') throw conflict('An account with this email already exists');

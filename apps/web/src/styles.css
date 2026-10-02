@@ -37,6 +37,7 @@ button.link { background: none; border: none; color: var(--primary); min-height:
   padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
 }
 .brand { margin-right: auto; }
+.banner { order: -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; padding: 8px 16px; background: color-mix(in srgb, var(--warn) 15%, var(--surface)); font-size: .9rem; }
 .content { flex: 1; width: 100%; max-width: 960px; margin: 0 auto; padding: 16px 16px 96px; }
 .tabbar {
   position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--surface);

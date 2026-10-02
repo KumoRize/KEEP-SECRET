@@ -56,6 +56,13 @@ const schema = z.object({
   RUN_WORKER_IN_API: bool.default(false),
   JOB_TIMEOUT_SEC: z.coerce.number().int().default(900),
   ADMIN_EMAILS: z.string().default(''),
+
+  // Email: 'console' logs messages (development only); 'resend' sends via the Resend HTTP API.
+  MAIL_DRIVER: z.enum(['console', 'resend']).default('console'),
+  MAIL_FROM: z.string().default('Creator Studio <no-reply@example.com>'),
+  RESEND_API_KEY: z.string().optional(),
+  // Blocks generation until the email is verified; curbs free-credit farming with throwaway addresses.
+  REQUIRE_EMAIL_VERIFICATION: bool.default(true),
 });
 
 export type Config = z.infer<typeof schema>;
@@ -69,6 +76,12 @@ function load(): Config {
   const cfg = parsed.data;
   if (cfg.NODE_ENV === 'production' && cfg.ENABLE_MOCK_PROVIDER) {
     throw new Error('ENABLE_MOCK_PROVIDER must be false in production');
+  }
+  if (cfg.MAIL_DRIVER === 'resend' && !cfg.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is required when MAIL_DRIVER=resend');
+  }
+  if (cfg.NODE_ENV === 'production' && cfg.MAIL_DRIVER === 'console' && cfg.REQUIRE_EMAIL_VERIFICATION) {
+    throw new Error('MAIL_DRIVER=console cannot deliver verification emails in production');
   }
   if (cfg.STORAGE_DRIVER === 's3' && !cfg.S3_BUCKET) {
     throw new Error('S3_BUCKET is required when STORAGE_DRIVER=s3');
