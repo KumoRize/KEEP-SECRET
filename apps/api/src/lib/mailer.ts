@@ -32,7 +32,23 @@ class ResendMailer implements Mailer {
   }
 }
 
-export const mailer: Mailer = config.MAIL_DRIVER === 'resend' ? new ResendMailer() : new ConsoleMailer();
+const consoleMailer = new ConsoleMailer();
+const resendMailer = new ResendMailer();
+
+/** True when emails actually reach inboxes (a Resend key from env or the owner dashboard). */
+export const mailDeliverable = () => config.MAIL_DRIVER === 'resend' || (config.MAIL_DRIVER === 'auto' && Boolean(config.RESEND_API_KEY));
+
+/** Picks the driver per send, so a key saved in the dashboard takes effect without a restart. */
+export const mailer: Mailer = {
+  send: (mail) => (mailDeliverable() ? resendMailer : consoleMailer).send(mail),
+};
+
+/**
+ * Verification is enforced only when it can be completed: emails are deliverable, or links are
+ * logged to the console outside production. Otherwise new users would be locked out.
+ */
+export const verificationEnforced = () =>
+  config.REQUIRE_EMAIL_VERIFICATION && (mailDeliverable() || (config.MAIL_DRIVER === 'console' && config.NODE_ENV !== 'production'));
 
 /** Exposed for tests and local development only. */
-export const consoleOutbox = mailer instanceof ConsoleMailer ? mailer.sent : null;
+export const consoleOutbox = consoleMailer.sent;

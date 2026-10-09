@@ -69,9 +69,16 @@ const schema = z.object({
   RUN_WORKER_IN_API: bool.default(false),
   JOB_TIMEOUT_SEC: z.coerce.number().int().default(900),
   ADMIN_EMAILS: z.string().default(''),
+  // The single platform owner (full control). Falls back to the first ADMIN_EMAILS entry.
+  OWNER_EMAIL: z.string().email().optional(),
+  // Proves the owner sign-up is really you (someone else could otherwise register your email first).
+  OWNER_SETUP_CODE: z.string().min(8, 'OWNER_SETUP_CODE must be at least 8 characters').optional(),
+  // 32-byte key (64 hex chars or base64) used to encrypt API keys saved from the dashboard.
+  SETTINGS_ENCRYPTION_KEY: z.string().optional(),
 
   // Email: 'console' logs messages (development only); 'resend' sends via the Resend HTTP API.
-  MAIL_DRIVER: z.enum(['console', 'resend']).default('console'),
+  // auto: Resend when RESEND_API_KEY is set (env or dashboard), otherwise log to console.
+  MAIL_DRIVER: z.enum(['auto', 'console', 'resend']).default('auto'),
   MAIL_FROM: z.string().default('Creator Studio <no-reply@example.com>'),
   RESEND_API_KEY: z.string().optional(),
   // Blocks generation until the email is verified; curbs free-credit farming with throwaway addresses.
@@ -109,9 +116,6 @@ function load(): Config {
   if (cfg.NODE_ENV === 'production' && cfg.ENABLE_MOCK_PROVIDER) {
     throw new Error('ENABLE_MOCK_PROVIDER must be false in production');
   }
-  if (cfg.MAIL_DRIVER === 'resend' && !cfg.RESEND_API_KEY) {
-    throw new Error('RESEND_API_KEY is required when MAIL_DRIVER=resend');
-  }
   if (cfg.NODE_ENV === 'production' && cfg.MAIL_DRIVER === 'console' && cfg.REQUIRE_EMAIL_VERIFICATION) {
     throw new Error('MAIL_DRIVER=console cannot deliver verification emails in production');
   }
@@ -123,6 +127,9 @@ function load(): Config {
   if (cfg.NODE_ENV === 'production' && cfg.RAZORPAY_KEY_ID && (/configure/i.test(cfg.SELLER_LEGAL_NAME) || /configure/i.test(cfg.SELLER_ADDRESS))) {
     throw new Error('Set SELLER_LEGAL_NAME and SELLER_ADDRESS before taking payments: they are printed on every invoice');
   }
+  if (cfg.SETTINGS_ENCRYPTION_KEY && decodeKey(cfg.SETTINGS_ENCRYPTION_KEY) === null) {
+    throw new Error('SETTINGS_ENCRYPTION_KEY must be 32 bytes: 64 hex characters or base64 (openssl rand -hex 32)');
+  }
   if (cfg.STORAGE_DRIVER === 's3' && !cfg.S3_BUCKET) {
     throw new Error('S3_BUCKET is required when STORAGE_DRIVER=s3');
   }
@@ -130,6 +137,17 @@ function load(): Config {
 }
 
 export const config = load();
+
+/** Decodes SETTINGS_ENCRYPTION_KEY (hex or base64) to 32 bytes, or null if invalid. */
+export function decodeKey(v: string): Buffer | null {
+  const buf = /^[0-9a-fA-F]{64}$/.test(v) ? Buffer.from(v, 'hex') : Buffer.from(v, 'base64');
+  return buf.length === 32 ? buf : null;
+}
+
+/** The owner's email: OWNER_EMAIL, else the first ADMIN_EMAILS entry. */
+export function ownerEmail(): string | null {
+  return (config.OWNER_EMAIL ?? config.ADMIN_EMAILS.split(',')[0] ?? '').trim().toLowerCase() || null;
+}
 
 export function razorpayPlanIds(): Record<string, string> {
   try {

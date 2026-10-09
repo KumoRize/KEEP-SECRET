@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
+import { isOwner, isStaff } from '../api';
 import { useAuth } from '../auth';
+import { useSite } from '../lib/site';
 import { VerifyBanner } from '../pages/AccountLinks';
 import { Icon, IconDefs } from './Icon';
 
@@ -22,7 +24,11 @@ export function Layout({ children }: { children: ReactNode }) {
   const { me, logout } = useAuth();
   const [sheet, setSheet] = useState(false);
   const loc = useLocation();
-  const admin = me?.user.role === 'admin';
+  const admin = isStaff(me);
+  const owner = isOwner(me);
+  const site = useSite();
+  const [hidden, setHidden] = useState(() => { try { return sessionStorage.getItem('ann') ?? ''; } catch { return ''; } });
+  const adminLink = { to: '/admin', label: owner ? 'Owner dashboard' : 'Admin', icon: owner ? 'shield' : 'chart' };
   const nav = (items: typeof MAIN) => items.map((i) => (
     <NavLink key={i.to} to={i.to} end={'end' in i ? i.end : false} onClick={() => setSheet(false)}>
       <Icon name={i.icon} /> {i.label}
@@ -39,7 +45,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {nav(MAIN)}
           <div className="label">Workspace</div>
           {nav(MORE)}
-          {admin && <><div className="label">Owner</div>{nav([{ to: '/admin', label: 'Admin & profit', icon: 'chart' }])}</>}
+          {admin && <><div className="label">{owner ? 'Owner' : 'Staff'}</div>{nav([adminLink])}</>}
         </nav>
         {me && (
           <div className="credit-card stack tight">
@@ -62,6 +68,15 @@ export function Layout({ children }: { children: ReactNode }) {
             <><Link to="/login" className="btn ghost">Log in</Link><Link to="/register" className="btn primary">Start free</Link></>
           )}
         </header>
+        {site?.maintenance && admin && (
+          <div className="banner" role="status"><Icon name="shield" size={16} /> Maintenance mode is ON: customers see a holding page. <Link to="/admin?tab=settings">Turn off</Link></div>
+        )}
+        {site?.announcement && hidden !== site.announcement && (
+          <div className="banner announce" role="status">
+            <Icon name="sparkles" size={16} /> {site.announcement}
+            <button className="link" aria-label="Dismiss announcement" onClick={() => { setHidden(site.announcement); try { sessionStorage.setItem('ann', site.announcement); } catch { /* ignore */ } }}><Icon name="x" size={14} /></button>
+          </div>
+        )}
         {me && me.user.verificationRequired && !me.user.emailVerified && <VerifyBanner />}
         <main className="content" key={loc.pathname.split('/')[1]}>{children}</main>
       </div>
@@ -78,7 +93,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <>
           <div className="sheet-backdrop" onClick={() => setSheet(false)} />
           <div className="sheet" role="dialog" aria-label="More">
-            {[...MAIN.slice(4), ...MORE, ...(admin ? [{ to: '/admin', label: 'Admin & profit', icon: 'chart' }] : [])].map((i) => (
+            {[...MAIN.slice(4), ...MORE, ...(admin ? [adminLink] : [])].map((i) => (
               <Link key={i.to} to={i.to} onClick={() => setSheet(false)}><Icon name={i.icon} /> {i.label}</Link>
             ))}
             <Link to="/" onClick={() => { setSheet(false); void logout(); }}><Icon name="logout" /> Log out</Link>

@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { config } from '../../config.js';
+import { verificationEnforced } from '../../lib/mailer.js';
 import { pool, tx } from '../../db/pool.js';
 import { AppError, badRequest, conflict, limitExceeded, notFound } from '../../lib/errors.js';
 import { getPlan } from '../billing/plans.js';
@@ -52,7 +52,7 @@ export async function createGeneration(
       );
       const user = users[0];
       if (!user || user.status !== 'active') throw new AppError(403, 'account_inactive', 'Account is not active');
-      if (config.REQUIRE_EMAIL_VERIFICATION && !user.email_verified_at) {
+      if (verificationEnforced() && !user.email_verified_at) {
         throw new AppError(403, 'email_not_verified', 'Verify your email address before generating');
       }
       const plan = getPlan(user.plan_id);

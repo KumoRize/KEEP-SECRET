@@ -280,10 +280,21 @@ describe('referrals and owner dashboard', () => {
     expect((await user(undefined, 'NOSUCHCODE')).id).toBeTruthy(); // unknown codes don't block sign-up
   });
 
-  it('shows profit, margin and MRR to admins only', async () => {
-    const admin = await user('admin@example.com'.replace('admin', `admin+${randomUUID().slice(0, 4)}`));
-    await pool.query(`UPDATE users SET role = 'admin' WHERE id = $1`, [admin.id]);
-    const s = await request(app).get('/api/v1/admin/stats').set(auth(admin.token));
+  it('shows profit, margin and MRR to the owner only; staff admins cannot see money or edit prices', async () => {
+    // admin@example.com is the owner (first ADMIN_EMAILS entry); it registered earlier in this file.
+    const ownerLogin = await request(app).post('/api/v1/auth/login').send({ email: 'admin@example.com', password: 'a-strong-password' });
+    const owner = { token: ownerLogin.body.accessToken as string };
+    expect(ownerLogin.body.user.role).toBe('owner');
+    const staff = await user();
+    await pool.query(`UPDATE users SET role = 'admin' WHERE id = $1`, [staff.id]);
+
+    expect((await request(app).get('/api/v1/admin/stats').set(auth(staff.token))).status).toBe(403);
+    expect((await request(app).get('/api/v1/admin/catalog').set(auth(staff.token))).status).toBe(200);
+    expect((await request(app).post('/api/v1/admin/catalog').set(auth(staff.token)).send({
+      providerId: 'fal', model: 'fal-ai/x', categories: ['image'], label: 'X', pricing: { perImage: 0.02 },
+    })).status).toBe(403);
+
+    const s = await request(app).get('/api/v1/admin/stats').set(auth(owner.token));
     expect(s.status).toBe(200);
     for (const k of ['revenueInr', 'providerCostInr', 'grossProfitInr', 'marginPct', 'mrrInr', 'arpuInr', 'outstandingCredits', 'outstandingCostInr', 'referrals']) {
       expect(s.body).toHaveProperty(k);
@@ -291,10 +302,10 @@ describe('referrals and owner dashboard', () => {
     expect(s.body.revenueInr).toBeGreaterThan(0);
     const u = await user();
     expect((await request(app).get('/api/v1/admin/catalog').set(auth(u.token))).status).toBe(403);
-    const created = await request(app).post('/api/v1/admin/catalog').set(auth(admin.token)).send({
+    const created = await request(app).post('/api/v1/admin/catalog').set(auth(owner.token)).send({
       providerId: 'fal', model: 'fal-ai/some-new-model', categories: ['image'], label: 'Some New Model', pricing: { perImage: 0.02 },
     });
     expect(created.status).toBe(201);
-    expect((await request(app).patch(`/api/v1/admin/catalog/${encodeURIComponent(created.body.id)}`).set(auth(admin.token)).send({ featured: true })).status).toBe(200);
+    expect((await request(app).patch(`/api/v1/admin/catalog/${encodeURIComponent(created.body.id)}`).set(auth(owner.token)).send({ featured: true })).status).toBe(200);
   });
 });

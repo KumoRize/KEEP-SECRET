@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../../db/pool.js';
-import { notFound } from '../../lib/errors.js';
-import { requireAdmin, requireAuth } from '../../middleware/auth.js';
+import { forbidden, notFound } from '../../lib/errors.js';
+import { requireAdmin, requireAuth, requireOwner } from '../../middleware/auth.js';
 import { parse } from '../../middleware/validate.js';
 import { invoicesCsv } from '../billing/invoices.js';
 import { getPlan, isPlanId } from '../billing/plans.js';
@@ -14,11 +14,21 @@ import { invalidateProviderSettings, listAdapters, providerSettings } from '../p
 export const adminRoutes = Router();
 adminRoutes.use(requireAuth, requireAdmin);
 
+/**
+ * The owner account can only be touched by the owner; staff admins cannot manage other admins.
+ */
+async function assertCanManage(actor: { id: string; role: string }, targetId: string): Promise<void> {
+  const { rows: [t] } = await pool.query<{ role: string }>('SELECT role FROM users WHERE id = $1', [targetId]);
+  if (!t) throw notFound('User not found');
+  if (t.role === 'owner' && actor.role !== 'owner') throw forbidden('The owner account is protected');
+  if (t.role === 'admin' && actor.role !== 'owner' && actor.id !== targetId) throw forbidden('Only the owner can manage admins');
+}
+
 async function audit(actorId: string, action: string, target: string, meta: object) {
   await pool.query('INSERT INTO audit_log (actor_id, action, target, meta) VALUES ($1,$2,$3,$4)', [actorId, action, target, meta]);
 }
 
-adminRoutes.get('/stats', async (req, res) => {
+adminRoutes.get('/stats', requireOwner, async (req, res) => {
   const days = parse(z.coerce.number().int().min(1).max(365).default(30), req.query.days);
   const [users, revenue, gens, byProvider, subs, wallets, referrals] = await Promise.all([
     pool.query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE plan_id <> 'free')::int AS paying,
@@ -84,6 +94,7 @@ adminRoutes.get('/users', async (req, res) => {
 adminRoutes.post('/users/:id/credits', async (req, res) => {
   const id = parse(z.uuid(), req.params.id);
   const b = parse(z.object({ amount: z.number().int().refine((n) => n !== 0 && Math.abs(n) <= 1_000_000), reason: z.string().trim().min(3).max(200) }), req.body);
+  await assertCanManage(req.user!, id);
   const balance = b.amount > 0
     ? await addPurchasedCredits(id, b.amount, { kind: 'admin_adjust', refType: 'admin', refId: req.user!.id, note: b.reason })
     : await debitCredits(id, -b.amount, b.reason, req.user!.id);
@@ -98,6 +109,10 @@ adminRoutes.patch('/users/:id', async (req, res) => {
     role: z.enum(['user', 'admin']).optional(),
     planId: z.string().refine(isPlanId, 'unknown plan').optional(),
   }), req.body);
+  await assertCanManage(req.user!, id);
+  // Only the owner appoints or removes staff admins; ownership itself is set by OWNER_EMAIL.
+  if (b.role && req.user!.role !== 'owner') throw forbidden('Only the owner can change roles');
+  if (id === req.user!.id && (b.status || b.role)) throw forbidden('You cannot change your own role or status');
   const { rows } = await pool.query(
     `UPDATE users SET status = COALESCE($2, status), role = COALESCE($3, role), plan_id = COALESCE($4, plan_id)
       WHERE id = $1 RETURNING id, email, status, role, plan_id`,
@@ -125,7 +140,7 @@ adminRoutes.get('/providers', async (_req, res) => {
   });
 });
 
-adminRoutes.put('/providers/:id', async (req, res) => {
+adminRoutes.put('/providers/:id', requireOwner, async (req, res) => {
   const id = parse(z.string().max(50), req.params.id);
   if (!listAdapters().some((a) => a.id === id)) throw notFound('Unknown provider');
   const b = parse(z.object({ enabled: z.boolean(), priority: z.number().int().min(0).max(1000) }), req.body);
@@ -151,7 +166,7 @@ adminRoutes.get('/generations', async (req, res) => {
   res.json({ items: rows });
 });
 
-adminRoutes.get('/invoices.csv', async (req, res) => {
+adminRoutes.get('/invoices.csv', requireOwner, async (req, res) => {
   const q = parse(z.object({ from: z.iso.date(), to: z.iso.date() }), req.query);
   // `to` is inclusive for the caller; dates are IST calendar days.
   const from = new Date(`${q.from}T00:00:00+05:30`);
@@ -162,7 +177,7 @@ adminRoutes.get('/invoices.csv', async (req, res) => {
   res.send(await invoicesCsv(from, to));
 });
 
-adminRoutes.get('/audit', async (_req, res) => {
+adminRoutes.get('/audit', requireOwner, async (_req, res) => {
   const { rows } = await pool.query('SELECT * FROM audit_log ORDER BY id DESC LIMIT 200');
   res.json({ items: rows });
 });

@@ -3,6 +3,7 @@ import { config } from '../../config.js';
 import { tx } from '../../db/pool.js';
 import { AppError, insufficientCredits, limitExceeded } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
+import { verificationEnforced } from '../../lib/mailer.js';
 import { getPlan } from '../billing/plans.js';
 import { getBalance, holdCredits } from '../billing/wallet.js';
 import { loadCatalog, type CatalogRow } from '../catalog/catalog.js';
@@ -81,7 +82,7 @@ export async function reserveTurn(opts: {
       'SELECT plan_id, status, email_verified_at FROM users WHERE id = $1 FOR UPDATE', [userId],
     );
     if (!u || u.status !== 'active') throw new AppError(403, 'account_inactive', 'Account is not active');
-    if (config.REQUIRE_EMAIL_VERIFICATION && !u.email_verified_at) {
+    if (verificationEnforced() && !u.email_verified_at) {
       throw new AppError(403, 'email_not_verified', 'Verify your email address first');
     }
     const plan = getPlan(u.plan_id);

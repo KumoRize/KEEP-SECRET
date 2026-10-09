@@ -3,7 +3,9 @@ export interface Plan {
   dailyGenerations: number; dailyMessages: number; maxConcurrent: number; maxVideoSeconds: number; commercialUse: boolean;
 }
 export interface Balance { subscription: number; purchased: number; total: number }
-export interface Me { user: { id: string; email: string; role: string; emailVerified: boolean; verificationRequired: boolean; plan: Plan }; balance: Balance }
+export interface Me { user: { id: string; email: string; role: 'user' | 'admin' | 'owner'; emailVerified: boolean; verificationRequired: boolean; plan: Plan }; balance: Balance }
+export const isStaff = (me: Me | null) => me?.user.role === 'admin' || me?.user.role === 'owner';
+export const isOwner = (me: Me | null) => me?.user.role === 'owner';
 export interface Asset { id: string; filename: string; content_type: string; size_bytes: number; url: string; previewUrl: string }
 export interface Generation {
   id: string; prompt: string; modality: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
