@@ -6,7 +6,7 @@ import { requireAuth } from '../../middleware/auth.js';
 import { rateLimit } from '../../middleware/rateLimit.js';
 import { parse } from '../../middleware/validate.js';
 import { createQuote } from '../orchestrator/quote.js';
-import { MODALITIES } from '../providers/types.js';
+import { MODALITIES, TEXT_MODES } from '../providers/types.js';
 import { storage } from '../storage/storage.js';
 import { cancelGeneration, createGeneration, getGeneration, type GenerationRow } from './service.js';
 
@@ -84,11 +84,11 @@ generationRoutes.get('/', async (req, res) => {
     limit: z.coerce.number().int().min(1).max(50).default(20),
   }), req.query);
   const { rows } = await pool.query<GenerationRow>(
-    `SELECT * FROM generations WHERE user_id = $1
+    `SELECT * FROM generations WHERE user_id = $1 AND modality <> ALL($6)
        AND ($2::uuid IS NULL OR project_id = $2) AND ($3::text IS NULL OR modality = $3)
        AND ($4::timestamptz IS NULL OR created_at < $4)
      ORDER BY created_at DESC LIMIT $5`,
-    [req.user!.id, q.projectId ?? null, q.modality ?? null, q.before ?? null, q.limit],
+    [req.user!.id, q.projectId ?? null, q.modality ?? null, q.before ?? null, q.limit, TEXT_MODES],
   );
   const assets = await assetsFor(rows.map((r) => r.id));
   res.json({ items: rows.map((g) => serializeGeneration(g, assets.get(g.id))) });

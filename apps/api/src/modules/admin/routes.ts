@@ -5,7 +5,8 @@ import { notFound } from '../../lib/errors.js';
 import { requireAdmin, requireAuth } from '../../middleware/auth.js';
 import { parse } from '../../middleware/validate.js';
 import { invoicesCsv } from '../billing/invoices.js';
-import { isPlanId } from '../billing/plans.js';
+import { getPlan, isPlanId } from '../billing/plans.js';
+import { config } from '../../config.js';
 import { addPurchasedCredits, debitCredits, getBalance } from '../billing/wallet.js';
 import { breaker } from '../providers/circuitBreaker.js';
 import { invalidateProviderSettings, listAdapters, providerSettings } from '../providers/registry.js';
@@ -19,23 +20,51 @@ async function audit(actorId: string, action: string, target: string, meta: obje
 
 adminRoutes.get('/stats', async (req, res) => {
   const days = parse(z.coerce.number().int().min(1).max(365).default(30), req.query.days);
-  const [users, revenue, gens, byProvider] = await Promise.all([
-    pool.query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE plan_id <> 'free')::int AS paying FROM users`),
-    pool.query(`SELECT COALESCE(sum(amount_paise), 0)::bigint AS paise FROM payments WHERE status = 'paid' AND paid_at >= now() - make_interval(days => $1)`, [days]),
-    pool.query(
-      `SELECT status, count(*)::int AS n FROM generations WHERE created_at >= now() - make_interval(days => $1) GROUP BY status`, [days]),
+  const [users, revenue, gens, byProvider, subs, wallets, referrals] = await Promise.all([
+    pool.query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE plan_id <> 'free')::int AS paying,
+                       count(*) FILTER (WHERE created_at >= now() - make_interval(days => $1))::int AS new FROM users`, [days]),
+    pool.query(`SELECT COALESCE(sum(amount_paise), 0)::bigint AS paise, count(*)::int AS payments,
+                       COALESCE(sum(amount_paise) FILTER (WHERE kind = 'subscription'), 0)::bigint AS sub_paise
+                  FROM payments WHERE status = 'paid' AND paid_at >= now() - make_interval(days => $1)`, [days]),
+    pool.query(`SELECT status, count(*)::int AS n FROM generations WHERE created_at >= now() - make_interval(days => $1) GROUP BY status`, [days]),
     pool.query(
       `SELECT provider_id, modality, count(*)::int AS generations, COALESCE(sum(charged_credits),0)::bigint AS credits,
               COALESCE(sum(provider_cost_usd_micros),0)::bigint AS cost_usd_micros
          FROM generations WHERE status = 'succeeded' AND created_at >= now() - make_interval(days => $1)
         GROUP BY provider_id, modality ORDER BY cost_usd_micros DESC`, [days]),
+    pool.query(`SELECT plan_id, count(*)::int AS n FROM subscriptions WHERE status = 'active' AND current_period_end > now() GROUP BY plan_id`),
+    pool.query(`SELECT COALESCE(sum(subscription_balance + purchased_balance), 0)::bigint AS credits FROM wallets`),
+    pool.query(`SELECT count(*)::int AS rewards, COALESCE(sum(referrer_credits + referee_credits), 0)::int AS credits
+                  FROM referral_rewards WHERE created_at >= now() - make_interval(days => $1)`, [days]),
   ]);
+  const revenueInr = Number(revenue.rows[0].paise) / 100;
+  const providerCosts = byProvider.rows.map((r) => {
+    const costInr = (Number(r.cost_usd_micros) / 1e6) * config.USD_INR;
+    // What the charged credits are worth at list value (before plan discounts).
+    const creditValueInr = Number(r.credits) * config.INR_PER_CREDIT_COST;
+    return { ...r, cost_usd: Number(r.cost_usd_micros) / 1e6, cost_inr: Math.round(costInr * 100) / 100, credit_value_inr: creditValueInr };
+  });
+  const providerCostInr = providerCosts.reduce((s, r) => s + r.cost_inr, 0);
+  const mrrInr = subs.rows.reduce((s, r) => s + getPlan(r.plan_id).priceInr * r.n, 0);
+  const outstandingCredits = Number(wallets.rows[0].credits);
+  const paying = users.rows[0].paying as number;
   res.json({
     days,
     users: users.rows[0],
-    revenueInr: Number(revenue.rows[0].paise) / 100,
+    revenueInr,
+    payments: revenue.rows[0].payments,
+    providerCostInr: Math.round(providerCostInr * 100) / 100,
+    grossProfitInr: Math.round((revenueInr - providerCostInr) * 100) / 100,
+    marginPct: revenueInr > 0 ? Math.round(((revenueInr - providerCostInr) / revenueInr) * 1000) / 10 : null,
+    mrrInr,
+    activeSubscriptions: subs.rows,
+    arpuInr: paying > 0 ? Math.round((revenueInr / paying) * 100) / 100 : 0,
+    // Provider cost you would incur if every outstanding credit were spent (credits are priced at cost x markup).
+    outstandingCredits,
+    outstandingCostInr: Math.round(((outstandingCredits * config.INR_PER_CREDIT_COST) / config.PRICE_MARKUP) * 100) / 100,
+    referrals: referrals.rows[0],
     generationsByStatus: gens.rows,
-    providerCosts: byProvider.rows.map((r) => ({ ...r, cost_usd: Number(r.cost_usd_micros) / 1e6 })),
+    providerCosts,
   });
 });
 

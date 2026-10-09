@@ -38,6 +38,18 @@ const schema = z.object({
   // Set only after reviewing each configured Replicate model's licence for commercial use.
   REPLICATE_COMMERCIAL_LICENSE_CONFIRMED: bool.default(false),
   ELEVENLABS_API_KEY: z.string().optional(),
+  // Aggregators: one key each unlocks many models (catalog is admin-editable).
+  OPENROUTER_API_KEY: z.string().optional(),
+  FAL_KEY: z.string().optional(),
+  // Web search for Research mode and agent tools (first configured one is used).
+  TAVILY_API_KEY: z.string().optional(),
+  BRAVE_SEARCH_API_KEY: z.string().optional(),
+  // Provider cost of one web search, added to research/agent message cost (verify with your search plan).
+  SEARCH_COST_USD: z.coerce.number().min(0).default(0.01),
+  APP_NAME: z.string().default('Creator Studio'),
+  // Referral rewards (credits), paid only after the referred user's first real payment.
+  REFERRAL_REFERRER_CREDITS: z.coerce.number().int().min(0).default(300),
+  REFERRAL_REFEREE_CREDITS: z.coerce.number().int().min(0).default(100),
   ENABLE_MOCK_PROVIDER: bool.default(false),
   MODERATION_ENABLED: bool.default(true),
 

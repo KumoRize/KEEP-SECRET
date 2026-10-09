@@ -1,6 +1,15 @@
-# Creator Studio: an all-in-one AI creator SaaS
+# Creator Studio: a world of AI in one app
 
-Users type one prompt. The orchestrator works out what they want (image, video, 3D model, website, app, game or music), picks a provider and model, and shows the credit cost **before** anything runs. Credits are held when a job starts. They are charged for the actual cost when it succeeds and refunded automatically when it fails.
+One account, one credit wallet, every kind of AI:
+
+| | What users get |
+|---|---|
+| **Create** | Images, videos, music, 3D models, websites, apps and games from one prompt, with the credit cost shown before anything runs |
+| **Write & code** | Streaming chat, stories, scenarios and scripts, coding help |
+| **Research** | Answers grounded in live web search, with numbered citations |
+| **Agents** | Describe an agent in one sentence; AI writes its instructions. Save, share publicly, chat |
+| **Explore** | A searchable universe of premium and free models (OpenRouter's catalogue plus curated fal.ai image and video models) |
+| **Developer API** | The same models and credits from their own apps, using API keys |
 
 ## Stack
 | Layer | Choice |
@@ -19,6 +28,28 @@ docker compose up --build         # api on :8080 plus worker, Postgres and Redis
 npm ci && npm run migrate && npm run dev:api   # and: npm run dev:web, npm run worker -w apps/api
 ```
 Emails listed in `ADMIN_EMAILS` become admins when they register.
+
+## Model universe
+- **Text, coding and agent models** come from OpenRouter. Its full model list is synced at startup and daily by the worker, or on demand from Admin > Models > Sync. Free models (`:free`, or zero price) cost **0 credits** and carry a note that their host may log prompts. Daily message caps per plan limit abuse.
+- **Image and video models** come from fal.ai. Curated defaults are seeded once: FLUX schnell, dev and 1.1 pro; Kling 2.1 Master; Veo 3.1 and Veo 3.1 Fast. Their IDs and duration rules were checked against fal's model pages; **verify the prices** before launch.
+- **Editing:** admins can add, feature, disable or re-price any model without a deploy. Duration snapping (for example Veo's 4/6/8 seconds) and extra inputs are configured per model.
+- **Built-in providers** (OpenAI, Anthropic, Stability, Replicate, ElevenLabs) still work alongside the catalogue.
+
+## Chat, story, code, research and agents
+- **Streaming:** replies stream over Server-Sent Events: `POST /api/v1/chat/conversations/:id/messages`.
+- **Credits:** each reply reserves its worst-case cost, then charges actual usage, using OpenRouter's reported cost when available. A failure before any text is fully refunded. If a balance can't cover a full-length reply, the reply is shortened to fit rather than refused.
+- **Research and web-search agents:** the engine searches with Tavily or Brave, passes the numbered sources to the model, and returns citations. Each search adds `SEARCH_COST_USD`.
+- **Agent generator:** turns one sentence into a validated agent spec (name, instructions, starter prompts, tools). If the first model fails, it falls back to the next.
+
+## How you make money (owner income)
+Payments go to **your** Razorpay account, and the owner dashboard is visible only to `ADMIN_EMAILS`. API keys can never reach admin endpoints.
+1. **Subscriptions and credit packs.** Credits are priced at provider cost × `PRICE_MARKUP` (1.6×). Each credit costs you about ₹0.16 in provider fees (₹0.25 ÷ 1.6). Plans sell credits at ₹0.26–₹0.33 each, a 41–53% gross margin on credits that get used. Packs sell at ₹0.29–₹0.40 each, a 45–61% margin. Unused monthly credits expire, which adds margin.
+2. **Free models as the funnel.** The free plan runs on free models that cost you nothing, so users can try the product at near-zero cost. Premium models, video and commercial rights sit behind paid plans.
+3. **Developer API.** Sell the same credits to businesses and developers who call the models from their own code (Developer page, `Authorization: Bearer sk_live_…`).
+4. **Referrals.** Inviters earn credits only after the invited person pays, so referral spend is always covered by revenue.
+5. **Watching the numbers.** Admin > Profit shows revenue, provider cost (₹), gross profit and margin, MRR, ARPU, the cost of serving unspent credits, and margin per model family. Re-price or disable unprofitable models in Admin > Models.
+
+Nothing here guarantees income: results depend on traffic and conversion. Your costs also include hosting, Razorpay's per-transaction fees (check the current rate), GST, and provider price changes.
 
 ## How a generation flows
 1. `POST /api/v1/generations/estimate {prompt}` → intent detection (`orchestrator/intent.ts`) → plan checks → candidate models ranked by admin priority, then quality or cost (`router.ts`). The response is an HMAC-signed quote that binds the user, a hash of the prompt, the price and the fallback chain, and expires after 10 minutes.
@@ -71,6 +102,7 @@ All optional; each one is off until its variable is set.
 - Every response carries an `X-Request-Id`, which is also written to the request log and shown in 500 errors so support can find a failing request.
 
 ## Must verify before launch (not confirmed here)
+- **fal.ai prices** in Admin > Models (seeded values are conservative estimates) and OpenRouter terms for the models you feature.
 - **Prices**: the USD figures in each adapter are planning estimates. Check them against the current pricing pages for OpenAI, Anthropic, Stability, Replicate and ElevenLabs.
 - **Model IDs and endpoints**: `OPENAI_CODE_MODEL` (default `gpt-4.1`), `ANTHROPIC_MODEL`, and especially the **ElevenLabs Music endpoint and parameters**, which could not be confirmed.
 - **Replicate**: every model has its own input schema and licence. Match the input builders in `adapters/replicate.ts` to the models you choose, and set `REPLICATE_COMMERCIAL_LICENSE_CONFIRMED=true` only after reviewing each licence. Until then, paid (commercial-use) plans will not route to Replicate.
@@ -81,4 +113,4 @@ All optional; each one is off until its variable is set.
 Credit notes for refunds: refunds aren't automated yet, so issue credit notes manually for now. Government e-invoicing (IRN), which applies above an annual turnover threshold (₹5 crore when this was written; confirm with your CA).
 
 ## Tests
-`npm test` runs 83 unit and API tests against a real Postgres. They cover intent detection, wallet invariants (including concurrent holds), fallback, refunds, idempotency, quote tampering, plan gates, refresh-token reuse, webhooks, admin actions, email verification, password reset, storage quotas, long-running jobs, alerts and metrics, and GST invoices (tax amounts, numbering, place of supply, escaping, access control, CSV export).
+`npm test` runs 105 unit and API tests against a real Postgres. They cover intent detection, wallet invariants (including concurrent holds), fallback, refunds, idempotency, quote tampering, plan gates, refresh-token reuse, webhooks, admin actions, email verification, password reset, storage quotas, long-running jobs, alerts and metrics, GST invoices, the model catalogue and OpenRouter sync, fal.ai submit/poll, streaming chat billing (free, paid, refunds, low balances, daily caps), research citations, agents (generator, sharing, privacy), developer API keys, referrals and the profit dashboard.

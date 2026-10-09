@@ -1,4 +1,7 @@
 export const MODALITIES = ['image', 'video', '3d', 'website', 'app', 'game', 'music'] as const;
+/** Text modes handled by the streaming chat engine rather than the job queue. */
+export const TEXT_MODES = ['chat', 'story', 'code', 'research', 'agent'] as const;
+export type TextMode = (typeof TEXT_MODES)[number];
 export type Modality = (typeof MODALITIES)[number];
 
 export interface GenerationParams {
@@ -42,6 +45,8 @@ export interface ProviderModel {
   quality: number;
   license: ModelLicense;
   maxDurationSec?: number;
+  /** Free model: costs 0 credits (still subject to plan daily limits). */
+  free?: boolean;
   /** Long-running model: handled with the adapter's submit/poll instead of run. */
   async?: boolean;
   /** Upper-bound cost in USD for the given request; used to hold credits. */

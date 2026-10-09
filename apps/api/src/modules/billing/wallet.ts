@@ -117,6 +117,7 @@ export interface Hold {
 
 /** Reserves credits inside the caller's transaction. Subscription credits are spent first (they expire). */
 export async function holdCredits(c: PoolClient, userId: string, amount: number, generationId: string): Promise<Hold> {
+  if (amount === 0) return { subscription: 0, purchased: 0 }; // free model: nothing to reserve
   const w = await lockWallet(c, userId);
   const total = w.subscription_balance + w.purchased_balance;
   if (total < amount) throw insufficientCredits(amount, total);

@@ -35,8 +35,11 @@ export const authRoutes = Router();
 const authLimiter = rateLimit({ name: 'auth', limit: 10, windowSec: 60, key: (req) => `${req.ip}:${String(req.body?.email ?? '').toLowerCase()}` });
 
 authRoutes.post('/register', authLimiter, async (req, res) => {
-  const body = parse(credentials.extend({ name: z.string().trim().max(80).default('') }), req.body);
-  const s = await auth.register(body.email, body.password, body.name);
+  const body = parse(credentials.extend({
+    name: z.string().trim().max(80).default(''),
+    referralCode: z.string().trim().regex(/^[A-Za-z0-9]{4,16}$/).optional(),
+  }), req.body);
+  const s = await auth.register(body.email, body.password, body.name, body.referralCode);
   setRefreshCookie(res, s.refreshToken);
   res.status(201).json({ user: s.user, accessToken: s.accessToken });
 });
@@ -68,7 +71,10 @@ authRoutes.post('/logout', async (req, res) => {
 authRoutes.get('/me', requireAuth, async (req, res) => {
   const u = req.user!;
   res.json({
-    user: { id: u.id, email: u.email, role: u.role, emailVerified: Boolean(u.email_verified_at), plan: getPlan(u.plan_id) },
+    user: {
+      id: u.id, email: u.email, role: u.role, emailVerified: Boolean(u.email_verified_at),
+      verificationRequired: config.REQUIRE_EMAIL_VERIFICATION, plan: getPlan(u.plan_id),
+    },
     balance: await getBalance(u.id),
   });
 });

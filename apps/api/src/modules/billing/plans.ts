@@ -9,6 +9,8 @@ export interface Plan {
   monthlyCredits: number;
   modalities: Modality[];
   dailyGenerations: number;
+  /** Chat/story/code/research/agent messages per day (free models included). */
+  dailyMessages: number;
   maxConcurrent: number;
   maxVideoSeconds: number;
   maxMusicSeconds: number;
@@ -21,27 +23,27 @@ const ALL: Modality[] = ['image', 'video', '3d', 'website', 'app', 'game', 'musi
 export const PLANS: Record<PlanId, Plan> = {
   free: {
     id: 'free', name: 'Free', priceInr: 0, monthlyCredits: 60,
-    modalities: ['image', 'website', 'music'], dailyGenerations: 10, maxConcurrent: 1,
+    modalities: ['image', 'website', 'music'], dailyGenerations: 10, dailyMessages: 50, maxConcurrent: 1,
     maxVideoSeconds: 0, maxMusicSeconds: 30, commercialUse: false, storageGb: 1,
   },
   starter: {
     id: 'starter', name: 'Starter', priceInr: 199, monthlyCredits: 600,
-    modalities: ['image', 'website', 'app', 'game', 'music', '3d', 'video'], dailyGenerations: 100, maxConcurrent: 2,
+    modalities: ['image', 'website', 'app', 'game', 'music', '3d', 'video'], dailyGenerations: 100, dailyMessages: 500, maxConcurrent: 2,
     maxVideoSeconds: 5, maxMusicSeconds: 60, commercialUse: true, storageGb: 10,
   },
   creator: {
     id: 'creator', name: 'Creator', priceInr: 499, monthlyCredits: 1700,
-    modalities: ALL, dailyGenerations: 300, maxConcurrent: 3,
+    modalities: ALL, dailyGenerations: 300, dailyMessages: 1500, maxConcurrent: 3,
     maxVideoSeconds: 10, maxMusicSeconds: 120, commercialUse: true, storageGb: 50,
   },
   pro: {
     id: 'pro', name: 'Pro', priceInr: 999, monthlyCredits: 3600,
-    modalities: ALL, dailyGenerations: 1000, maxConcurrent: 5,
+    modalities: ALL, dailyGenerations: 1000, dailyMessages: 5000, maxConcurrent: 5,
     maxVideoSeconds: 10, maxMusicSeconds: 180, commercialUse: true, storageGb: 200,
   },
   studio: {
     id: 'studio', name: 'Studio', priceInr: 1999, monthlyCredits: 7600,
-    modalities: ALL, dailyGenerations: 3000, maxConcurrent: 10,
+    modalities: ALL, dailyGenerations: 3000, dailyMessages: 15000, maxConcurrent: 10,
     maxVideoSeconds: 10, maxMusicSeconds: 300, commercialUse: true, storageGb: 1000,
   },
 };

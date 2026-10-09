@@ -12,6 +12,11 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { metricsHandler } from './modules/admin/metrics.js';
 import { adminRoutes } from './modules/admin/routes.js';
+import { agentRoutes } from './modules/agents/routes.js';
+import { referralRoutes } from './modules/billing/referrals.js';
+import { adminCatalogRoutes, catalogRoutes } from './modules/catalog/routes.js';
+import { chatRoutes } from './modules/chat/routes.js';
+import { developerRoutes } from './modules/developer/routes.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { billingRoutes, razorpayWebhook } from './modules/billing/routes.js';
 import { generationRoutes } from './modules/generations/routes.js';
@@ -87,6 +92,12 @@ export function createApp() {
   app.use('/api/v1/billing', billingRoutes);
   app.use('/api/v1/generations', generationRoutes);
   app.use('/api/v1/library', libraryRoutes);
+  app.use('/api/v1/catalog', catalogRoutes);
+  app.use('/api/v1/chat', chatRoutes);
+  app.use('/api/v1/agents', agentRoutes);
+  app.use('/api/v1/developer', developerRoutes);
+  app.use('/api/v1/referrals', referralRoutes);
+  app.use('/api/v1/admin/catalog', adminCatalogRoutes);
   app.use('/api/v1/admin', adminRoutes);
   app.use('/api', (_req, res) => void res.status(404).json({ error: { code: 'not_found', message: 'Not found' } }));
 

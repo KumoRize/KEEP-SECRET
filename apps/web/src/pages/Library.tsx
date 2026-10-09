@@ -38,8 +38,11 @@ export function LibraryPage() {
 
   return (
     <div className="stack">
+      <div className="hero" style={{ textAlign: 'left' }}>
+        <h1>Your <span className="gradient-text">library</span></h1>
+        <p>Every image, video, track, model, site, app and game you've generated.</p>
+      </div>
       <section className="card stack">
-        <h1>Library</h1>
         <div className="row wrap">
           <select value={modality} onChange={(e) => setModality(e.target.value)} aria-label="Filter by type">
             <option value="">All types</option>

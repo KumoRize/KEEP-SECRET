@@ -2,6 +2,7 @@ import { config } from '../../config.js';
 import { AppError, forbidden } from '../../lib/errors.js';
 import type { Plan } from '../billing/plans.js';
 import { breaker } from '../providers/circuitBreaker.js';
+import { loadCatalog } from '../catalog/catalog.js';
 import { configuredModels, providerSettings } from '../providers/registry.js';
 import type { GenerationParams, Modality, ProviderModel } from '../providers/types.js';
 
@@ -59,7 +60,7 @@ export async function selectCandidates(opts: {
 }): Promise<Candidate[]> {
   const { plan, modality, prompt, params } = opts;
   assertModalityAllowed(modality, plan);
-  const settings = await providerSettings();
+  const [settings] = await Promise.all([providerSettings(), loadCatalog()]);
   const eligible = configuredModels().filter((m: ProviderModel) => {
     const s = settings.get(m.providerId);
     if (m.modality !== modality || s?.enabled === false || breaker.isOpen(m.providerId)) return false;
@@ -73,14 +74,15 @@ export async function selectCandidates(opts: {
   }
   const priced = eligible.map((m) => {
     const costUsd = m.estimateCostUsd(prompt, params);
-    return { m, costUsd, credits: usdToCredits(costUsd), priority: settings.get(m.providerId)?.priority ?? 100 };
+    return { m, costUsd, credits: m.free ? 0 : usdToCredits(costUsd), priority: settings.get(m.providerId)?.priority ?? 100 };
   });
   priced.sort((a, b) =>
     a.priority - b.priority ||
     (opts.strategy === 'cheapest' ? a.credits - b.credits || b.m.quality - a.m.quality : b.m.quality - a.m.quality || a.credits - b.credits),
   );
   if (opts.preferredModelId) {
-    const idx = priced.findIndex((p) => p.m.id === opts.preferredModelId);
+    // Catalog ids are per model; routing ids may carry a '#modality' suffix (multi-category text models).
+    const idx = priced.findIndex((p) => p.m.id === opts.preferredModelId || p.m.id.split('#')[0] === opts.preferredModelId);
     if (idx > 0) priced.unshift(...priced.splice(idx, 1));
   }
   return priced.slice(0, MAX_FALLBACKS).map(({ m, costUsd, credits }) => ({
