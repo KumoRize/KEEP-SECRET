@@ -25,6 +25,10 @@ export interface GenerationRow {
   attempts: { modelId: string; error?: string; ok: boolean; ms: number }[];
   license_note: string | null;
   error: string | null;
+  external_id: string | null;
+  candidate_index: number;
+  poll_count: number;
+  started_at: Date | null;
   created_at: Date;
   finished_at: Date | null;
 }
@@ -130,7 +134,8 @@ export async function finishGeneration(
   const { rows } = await c.query<GenerationRow>(
     `UPDATE generations SET status = $3, charged_credits = $4, error = $5, provider_id = COALESCE($6, provider_id),
             model = COALESCE($7, model), provider_cost_usd_micros = $8, license_note = $9,
-            attempts = COALESCE($10, attempts), finished_at = now(), locked_at = NULL
+            attempts = COALESCE($10, attempts), finished_at = now(), locked_at = NULL,
+            external_id = NULL, next_poll_at = NULL
       WHERE id = $1 AND status = ANY($2) RETURNING *`,
     [
       id, from, outcome.status, outcome.charge, outcome.error ?? null, outcome.providerId ?? null, outcome.model ?? null,

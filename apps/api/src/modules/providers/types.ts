@@ -42,16 +42,27 @@ export interface ProviderModel {
   quality: number;
   license: ModelLicense;
   maxDurationSec?: number;
+  /** Long-running model: handled with the adapter's submit/poll instead of run. */
+  async?: boolean;
   /** Upper-bound cost in USD for the given request; used to hold credits. */
   estimateCostUsd(prompt: string, params: GenerationParams): number;
 }
 
+export type PollResult = { status: 'pending' } | { status: 'done'; result: ProviderResult };
+
+/**
+ * Implement either `run` (synchronous, finishes within one worker call) or `submit` + `poll`
+ * (long-running: the worker submits, releases its slot, and polls on later passes).
+ */
 export interface ProviderAdapter {
   id: string;
   name: string;
   isConfigured(): boolean;
   models(): ProviderModel[];
-  run(model: ProviderModel, req: GenerationRequest, signal: AbortSignal): Promise<ProviderResult>;
+  run?(model: ProviderModel, req: GenerationRequest, signal: AbortSignal): Promise<ProviderResult>;
+  submit?(model: ProviderModel, req: GenerationRequest, signal: AbortSignal): Promise<{ externalId: string }>;
+  /** Throws ProviderError when the provider reports failure. */
+  poll?(model: ProviderModel, externalId: string, req: GenerationRequest, signal: AbortSignal): Promise<PollResult>;
 }
 
 /**

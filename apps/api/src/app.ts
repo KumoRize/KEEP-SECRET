@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,19 +7,36 @@ import express from 'express';
 import helmet from 'helmet';
 import { config } from './config.js';
 import { pool } from './db/pool.js';
+import { logger } from './lib/logger.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { rateLimit } from './middleware/rateLimit.js';
+import { metricsHandler } from './modules/admin/metrics.js';
 import { adminRoutes } from './modules/admin/routes.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { billingRoutes, razorpayWebhook } from './modules/billing/routes.js';
 import { generationRoutes } from './modules/generations/routes.js';
 import { libraryRoutes } from './modules/library/routes.js';
+import { invoiceFromToken, renderInvoiceHtml } from './modules/billing/invoices.js';
 import { localStorage, verifyFileToken } from './modules/storage/storage.js';
 
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // behind one load balancer; adjust to your topology
+
+  // Request id for log correlation; returned to clients so support can find a failing request.
+  app.use((req, res, next) => {
+    const incoming = req.header('x-request-id');
+    const id = incoming && /^[\w-]{8,64}$/.test(incoming) ? incoming : randomUUID();
+    res.setHeader('X-Request-Id', id);
+    const start = process.hrtime.bigint();
+    res.on('finish', () => {
+      if (req.path === '/healthz' || req.path === '/readyz') return;
+      const ms = Number(process.hrtime.bigint() - start) / 1e6;
+      logger.info({ requestId: id, method: req.method, path: req.path, status: res.statusCode, ms: Math.round(ms) }, 'request');
+    });
+    next();
+  });
 
   app.use(helmet({
     contentSecurityPolicy: {
@@ -63,6 +81,8 @@ export function createApp() {
     res.json({ ok: true });
   });
 
+  app.get('/metrics', metricsHandler);
+
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/billing', billingRoutes);
   app.use('/api/v1/generations', generationRoutes);
@@ -86,10 +106,19 @@ export function createApp() {
     res.send(data);
   });
 
+  // Signed, short-lived invoice links: printable HTML that the browser saves as PDF.
+  app.get('/invoices/:token', async (req, res) => {
+    const inv = await invoiceFromToken(req.params.token);
+    if (!inv) return void res.status(404).send('Link expired. Open the invoice again from Billing.');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.type('html').send(renderInvoiceHtml(inv));
+  });
+
   const webDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
   if (existsSync(webDist)) {
     app.use(express.static(webDist, { index: false, maxAge: '1h' }));
-    app.get(/^\/(?!api|files).*/, (_req, res) => res.sendFile(join(webDist, 'index.html')));
+    app.get(/^\/(?!api|files|metrics|invoices\/).*/, (_req, res) => res.sendFile(join(webDist, 'index.html')));
   }
 
   app.use(errorHandler);

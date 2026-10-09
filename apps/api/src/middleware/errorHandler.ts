@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { AppError } from '../lib/errors.js';
-import { logger } from '../lib/logger.js';
+import { captureError } from '../lib/monitoring.js';
 
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
   if (err instanceof AppError) {
@@ -15,6 +15,6 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     res.status(400).json({ error: { code: 'bad_json', message: 'Malformed JSON body' } });
     return;
   }
-  logger.error({ err, path: req.path }, 'unhandled error');
-  res.status(500).json({ error: { code: 'internal', message: 'Something went wrong' } });
+  captureError(err, { path: req.path, method: req.method, requestId: res.getHeader('X-Request-Id') });
+  res.status(500).json({ error: { code: 'internal', message: 'Something went wrong', requestId: res.getHeader('X-Request-Id') } });
 }

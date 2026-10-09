@@ -1,3 +1,5 @@
+import { alert } from '../../lib/monitoring.js';
+
 interface State {
   failures: number;
   openedAt: number | null;
@@ -11,6 +13,7 @@ export class CircuitBreaker {
     private readonly threshold = 5,
     private readonly cooldownMs = 60_000,
     private readonly now: () => number = Date.now,
+    private readonly onOpen?: (providerId: string, failures: number) => void,
   ) {}
 
   isOpen(providerId: string): boolean {
@@ -32,7 +35,10 @@ export class CircuitBreaker {
   recordFailure(providerId: string, immediate = false): void {
     const s = this.states.get(providerId) ?? { failures: 0, openedAt: null };
     s.failures = immediate ? this.threshold : s.failures + 1;
-    if (s.failures >= this.threshold) s.openedAt = this.now();
+    if (s.failures >= this.threshold) {
+      if (s.openedAt == null) this.onOpen?.(providerId, s.failures);
+      s.openedAt = this.now();
+    }
     this.states.set(providerId, s);
   }
 
@@ -41,4 +47,6 @@ export class CircuitBreaker {
   }
 }
 
-export const breaker = new CircuitBreaker();
+export const breaker = new CircuitBreaker(5, 60_000, Date.now, (providerId, failures) => {
+  void alert(`circuit:${providerId}`, `Provider "${providerId}" taken out of rotation after ${failures} consecutive failures; traffic falls back to other providers for 60s.`);
+});
