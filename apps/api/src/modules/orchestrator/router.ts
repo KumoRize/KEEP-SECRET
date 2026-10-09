@@ -2,6 +2,7 @@ import { config } from '../../config.js';
 import { AppError, forbidden } from '../../lib/errors.js';
 import type { Plan } from '../billing/plans.js';
 import { breaker } from '../providers/circuitBreaker.js';
+import { loadCatalog } from '../catalog/catalog.js';
 import { configuredModels, providerSettings } from '../providers/registry.js';
 import type { GenerationParams, Modality, ProviderModel } from '../providers/types.js';
 
@@ -59,7 +60,7 @@ export async function selectCandidates(opts: {
 }): Promise<Candidate[]> {
   const { plan, modality, prompt, params } = opts;
   assertModalityAllowed(modality, plan);
-  const settings = await providerSettings();
+  const [settings] = await Promise.all([providerSettings(), loadCatalog()]);
   const eligible = configuredModels().filter((m: ProviderModel) => {
     const s = settings.get(m.providerId);
     if (m.modality !== modality || s?.enabled === false || breaker.isOpen(m.providerId)) return false;
@@ -73,7 +74,7 @@ export async function selectCandidates(opts: {
   }
   const priced = eligible.map((m) => {
     const costUsd = m.estimateCostUsd(prompt, params);
-    return { m, costUsd, credits: usdToCredits(costUsd), priority: settings.get(m.providerId)?.priority ?? 100 };
+    return { m, costUsd, credits: m.free ? 0 : usdToCredits(costUsd), priority: settings.get(m.providerId)?.priority ?? 100 };
   });
   priced.sort((a, b) =>
     a.priority - b.priority ||

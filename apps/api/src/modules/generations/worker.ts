@@ -5,6 +5,7 @@ import { logger } from '../../lib/logger.js';
 import { alert, captureError } from '../../lib/monitoring.js';
 import { usdToCredits } from '../orchestrator/router.js';
 import { breaker } from '../providers/circuitBreaker.js';
+import { loadCatalog } from '../catalog/catalog.js';
 import { findModel, getAdapter, providerSettings } from '../providers/registry.js';
 import {
   ProviderError, type GenerationParams, type GenerationRequest, type Modality, type ProviderAdapter, type ProviderModel, type ProviderResult,
@@ -53,6 +54,7 @@ const signalFor = () => AbortSignal.timeout(Math.min(config.JOB_TIMEOUT_SEC, 120
  * through to the next candidate; content refusals end the job. Every terminal path settles credits.
  */
 export async function processGeneration(gen: GenerationRow): Promise<GenerationRow | null> {
+  await loadCatalog(); // catalog-backed models (fal, OpenRouter) must be resolvable
   const attempts: Attempt[] = [...gen.attempts];
 
   // 1) A long-running job is waiting on the provider: check on it.

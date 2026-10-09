@@ -1,6 +1,8 @@
 import { pool } from '../../db/pool.js';
 import { anthropicAdapter } from './adapters/anthropic.js';
 import { elevenlabsAdapter } from './adapters/elevenlabs.js';
+import { falAdapter } from './adapters/fal.js';
+import { openrouterAdapter } from './adapters/openrouter.js';
 import { mockAdapter } from './adapters/mock.js';
 import { openaiAdapter } from './adapters/openai.js';
 import { replicateAdapter } from './adapters/replicate.js';
@@ -12,7 +14,7 @@ import type { ProviderAdapter, ProviderModel } from './types.js';
  * Routing, pricing, fallback, credits and the admin UI pick it up automatically.
  */
 const adapters = new Map<string, ProviderAdapter>();
-for (const a of [anthropicAdapter, openaiAdapter, stabilityAdapter, replicateAdapter, elevenlabsAdapter, mockAdapter]) {
+for (const a of [anthropicAdapter, openaiAdapter, stabilityAdapter, replicateAdapter, elevenlabsAdapter, falAdapter, openrouterAdapter, mockAdapter]) {
   adapters.set(a.id, a);
 }
 

@@ -8,6 +8,7 @@ import { PLANS } from '../billing/plans.js';
 import { resetSubscriptionCredits } from '../billing/wallet.js';
 import { logger } from '../../lib/logger.js';
 import { sendVerificationEmail } from './emailTokens.js';
+import { newReferralCode } from '../billing/referrals.js';
 
 export interface PublicUser {
   id: string;
@@ -28,14 +29,19 @@ const adminEmails = () => config.ADMIN_EMAILS.split(',').map((e) => e.trim().toL
 // Burn comparable CPU when the email is unknown so response timing does not reveal registered emails.
 let dummyHash: Promise<string> | null = null;
 
-export async function register(email: string, password: string, name: string): Promise<Session> {
+export async function register(email: string, password: string, name: string, referralCode?: string): Promise<Session> {
   const passwordHash = await hashPassword(password);
   const role = adminEmails().includes(email.toLowerCase()) ? 'admin' : 'user';
   try {
     const user = await tx(async (c) => {
+      // Unknown referral codes are ignored rather than failing sign-up.
+      const referrer = referralCode
+        ? (await c.query<{ id: string }>('SELECT id FROM users WHERE referral_code = $1', [referralCode.toUpperCase()])).rows[0]?.id ?? null
+        : null;
       const { rows } = await c.query<PublicUser>(
-        'INSERT INTO users (email, password_hash, name, role) VALUES ($1,$2,$3,$4) RETURNING id, email, name, role, plan_id',
-        [email.toLowerCase(), passwordHash, name, role],
+        `INSERT INTO users (email, password_hash, name, role, referral_code, referred_by)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, email, name, role, plan_id`,
+        [email.toLowerCase(), passwordHash, name, role, newReferralCode(), referrer],
       );
       const u = rows[0]!;
       const cycle = new Date().toISOString().slice(0, 7);
@@ -47,7 +53,8 @@ export async function register(email: string, password: string, name: string): P
     await sendVerificationEmail(user).catch((err) => logger.error({ err }, 'verification email failed'));
     return { user, ...(await issueTokens(user.id)) };
   } catch (err) {
-    if ((err as { code?: string }).code === '23505') throw conflict('An account with this email already exists');
+    const e = err as { code?: string; constraint?: string };
+    if (e.code === '23505' && e.constraint === 'users_email_uq') throw conflict('An account with this email already exists');
     throw err;
   }
 }

@@ -5,6 +5,7 @@ import { AppError, badRequest, conflict, limitExceeded, notFound } from '../../l
 import { getPlan } from '../billing/plans.js';
 import { holdCredits, settleHold } from '../billing/wallet.js';
 import { verifyQuote } from '../orchestrator/quote.js';
+import { TEXT_MODES } from '../providers/types.js';
 
 export interface GenerationRow {
   id: string;
@@ -62,8 +63,8 @@ export async function createGeneration(
       const { rows: [counts] } = await c.query<{ active: number; today: number }>(
         `SELECT count(*) FILTER (WHERE status IN ('queued','running'))::int AS active,
                 count(*) FILTER (WHERE created_at >= date_trunc('day', now()))::int AS today
-           FROM generations WHERE user_id = $1 AND created_at >= now() - interval '2 days'`,
-        [userId],
+           FROM generations WHERE user_id = $1 AND created_at >= now() - interval '2 days' AND modality <> ALL($2)`,
+        [userId, TEXT_MODES],
       );
       if (counts!.active >= plan.maxConcurrent) {
         throw limitExceeded(`Your plan allows ${plan.maxConcurrent} generation(s) at a time`, { limit: plan.maxConcurrent });

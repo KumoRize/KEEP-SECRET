@@ -4,6 +4,7 @@ import { hmac, safeEqual } from '../../lib/crypto.js';
 import { AppError, badRequest, notFound } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 import { issueInvoice } from './invoices.js';
+import { rewardReferral } from './referrals.js';
 import { CREDIT_PACKS, getPlan, isPlanId, PLANS } from './plans.js';
 import { addPurchasedCredits, resetSubscriptionCredits } from './wallet.js';
 
@@ -67,6 +68,7 @@ async function fulfillPackOrder(orderId: string, paymentId: string, amountPaise?
       kind: 'purchase', refType: 'payment', refId: p.id, idempotencyKey: `payment:${p.id}`, note: pack.name,
     }, c);
     await issueInvoice(c, p.id);
+    await rewardReferral(c, p.user_id, p.id);
     return true;
   });
 }
@@ -183,7 +185,10 @@ async function onSubscriptionCharged(
        VALUES ($1, 'subscription', $2, $3, 'paid', $4, $5, now()) ON CONFLICT (razorpay_payment_id) DO NOTHING RETURNING id`,
       [s.user_id, plan.id, payment.amount, payment.id, sub.id],
     );
-    if (paymentRow) await issueInvoice(c, paymentRow.id);
+    if (paymentRow) {
+      await issueInvoice(c, paymentRow.id);
+      await rewardReferral(c, s.user_id, paymentRow.id);
+    }
     await resetSubscriptionCredits(s.user_id, plan.monthlyCredits, `sub:${sub.id}:${payment.id}`, c);
     // A new subscription supersedes any older one (plan change).
     const { rows: old } = await c.query<{ razorpay_subscription_id: string }>(
