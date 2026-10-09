@@ -3,6 +3,7 @@ import { pool, tx } from '../../db/pool.js';
 import { hmac, safeEqual } from '../../lib/crypto.js';
 import { AppError, badRequest, notFound } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
+import { issueInvoice } from './invoices.js';
 import { CREDIT_PACKS, getPlan, isPlanId, PLANS } from './plans.js';
 import { addPurchasedCredits, resetSubscriptionCredits } from './wallet.js';
 
@@ -65,6 +66,7 @@ async function fulfillPackOrder(orderId: string, paymentId: string, amountPaise?
     await addPurchasedCredits(p.user_id, pack.credits, {
       kind: 'purchase', refType: 'payment', refId: p.id, idempotencyKey: `payment:${p.id}`, note: pack.name,
     }, c);
+    await issueInvoice(c, p.id);
     return true;
   });
 }
@@ -176,11 +178,12 @@ async function onSubscriptionCharged(
       [sub.id, periodEnd],
     );
     await c.query('UPDATE users SET plan_id = $2, plan_renews_at = $3 WHERE id = $1', [s.user_id, plan.id, periodEnd]);
-    await c.query(
+    const { rows: [paymentRow] } = await c.query<{ id: string }>(
       `INSERT INTO payments (user_id, kind, item_id, amount_paise, status, razorpay_payment_id, razorpay_subscription_id, paid_at)
-       VALUES ($1, 'subscription', $2, $3, 'paid', $4, $5, now()) ON CONFLICT (razorpay_payment_id) DO NOTHING`,
+       VALUES ($1, 'subscription', $2, $3, 'paid', $4, $5, now()) ON CONFLICT (razorpay_payment_id) DO NOTHING RETURNING id`,
       [s.user_id, plan.id, payment.amount, payment.id, sub.id],
     );
+    if (paymentRow) await issueInvoice(c, paymentRow.id);
     await resetSubscriptionCredits(s.user_id, plan.monthlyCredits, `sub:${sub.id}:${payment.id}`, c);
     // A new subscription supersedes any older one (plan change).
     const { rows: old } = await c.query<{ razorpay_subscription_id: string }>(

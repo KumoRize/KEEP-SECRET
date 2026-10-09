@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidGstin } from './lib/gstin.js';
 
 const bool = z
   .enum(['true', 'false', '1', '0'])
@@ -64,6 +65,18 @@ const schema = z.object({
   // Blocks generation until the email is verified; curbs free-credit farming with throwaway addresses.
   REQUIRE_EMAIL_VERIFICATION: bool.default(true),
 
+  // Invoicing (India GST). Leave SELLER_GSTIN empty if not GST-registered: a Bill of Supply
+  // without tax is issued instead. Have a chartered accountant confirm SAC code and rate.
+  SELLER_LEGAL_NAME: z.string().default('Creator Studio (configure SELLER_LEGAL_NAME)'),
+  SELLER_ADDRESS: z.string().default('Configure SELLER_ADDRESS'),
+  SELLER_STATE_CODE: z.string().regex(/^\d{2}$/, 'SELLER_STATE_CODE must be a 2-digit GST state code').default('27'),
+  SELLER_GSTIN: z.string().optional(),
+  GST_SAC_CODE: z.string().regex(/^\d{6}$/, 'GST_SAC_CODE must be 6 digits').optional(),
+  GST_RATE_PERCENT: z.coerce.number().min(0).max(28).default(18),
+  // true: plan and pack prices already include GST (the tax is carved out of the price).
+  PRICES_INCLUDE_GST: bool.default(true),
+  INVOICE_PREFIX: z.string().regex(/^[A-Z0-9]{1,4}$/, 'INVOICE_PREFIX: 1-4 uppercase letters/digits').default('INV'),
+
   // Observability (all optional).
   SENTRY_DSN: z.string().url().optional(),
   // Slack- or Discord-compatible incoming webhook for operational alerts.
@@ -89,6 +102,14 @@ function load(): Config {
   }
   if (cfg.NODE_ENV === 'production' && cfg.MAIL_DRIVER === 'console' && cfg.REQUIRE_EMAIL_VERIFICATION) {
     throw new Error('MAIL_DRIVER=console cannot deliver verification emails in production');
+  }
+  if (cfg.SELLER_GSTIN) {
+    if (!isValidGstin(cfg.SELLER_GSTIN)) throw new Error('SELLER_GSTIN is not a valid GSTIN (format or checksum)');
+    if (cfg.SELLER_GSTIN.slice(0, 2) !== cfg.SELLER_STATE_CODE) throw new Error('SELLER_STATE_CODE must match the first two digits of SELLER_GSTIN');
+    if (!cfg.GST_SAC_CODE) throw new Error('GST_SAC_CODE is required when SELLER_GSTIN is set (confirm the code with your CA)');
+  }
+  if (cfg.NODE_ENV === 'production' && cfg.RAZORPAY_KEY_ID && (/configure/i.test(cfg.SELLER_LEGAL_NAME) || /configure/i.test(cfg.SELLER_ADDRESS))) {
+    throw new Error('Set SELLER_LEGAL_NAME and SELLER_ADDRESS before taking payments: they are printed on every invoice');
   }
   if (cfg.STORAGE_DRIVER === 's3' && !cfg.S3_BUCKET) {
     throw new Error('S3_BUCKET is required when STORAGE_DRIVER=s3');

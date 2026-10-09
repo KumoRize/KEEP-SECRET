@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type Balance, type Plan } from '../api';
 import { useAuth } from '../auth';
+import { BillingDetails } from '../components/BillingDetails';
 
 interface Pack { id: string; name: string; credits: number; priceInr: number }
 interface LedgerRow { id: number; kind: string; delta: number; balance_after: number; note: string | null; created_at: string }
@@ -123,7 +124,9 @@ export function BillingPage() {
         ))}
       </ul>
 
-      <h2>History</h2>
+      <BillingDetails />
+
+      <h2>Credit history</h2>
       <div className="card">
         <table className="table">
           <thead><tr><th>Date</th><th>Type</th><th>Change</th><th>Balance</th></tr></thead>

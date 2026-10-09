@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, authHeaders } from '../api';
 
 interface Stats {
   users: { total: number; paying: number };
@@ -12,6 +12,35 @@ interface Provider {
   circuit: { failures: number; open: boolean }; models: { id: string; modality: string; label: string; commercialUse: boolean }[];
 }
 interface User { id: string; email: string; plan_id: string; status: string; credits: number }
+
+function InvoiceExport() {
+  const today = new Date().toISOString().slice(0, 10);
+  const [from, setFrom] = useState(today.slice(0, 8) + '01');
+  const [to, setTo] = useState(today);
+  const [err, setErr] = useState('');
+  // Fetched with the bearer token, then saved via a blob URL (a plain link cannot send auth headers).
+  const download = async () => {
+    setErr('');
+    try {
+      const res = await fetch(`/api/v1/admin/invoices.csv?from=${from}&to=${to}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const url = URL.createObjectURL(await res.blob());
+      const a = Object.assign(document.createElement('a'), { href: url, download: `invoices-${from}-to-${to}.csv` });
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  return (
+    <div className="card row wrap">
+      <label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+      <label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+      <button onClick={download}>Download CSV</button>
+      {err && <p className="error">{err}</p>}
+    </div>
+  );
+}
 
 export function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -67,6 +96,9 @@ export function AdminPage() {
           <div className="card"><span className="muted small">Provider cost (30d)</span><strong>${cost.toFixed(2)}</strong></div>
         </div>
       )}
+
+      <h2>GST invoices export</h2>
+      <InvoiceExport />
 
       <h2>Providers</h2>
       <div className="card">

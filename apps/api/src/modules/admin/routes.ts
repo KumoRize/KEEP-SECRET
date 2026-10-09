@@ -4,6 +4,7 @@ import { pool } from '../../db/pool.js';
 import { notFound } from '../../lib/errors.js';
 import { requireAdmin, requireAuth } from '../../middleware/auth.js';
 import { parse } from '../../middleware/validate.js';
+import { invoicesCsv } from '../billing/invoices.js';
 import { isPlanId } from '../billing/plans.js';
 import { addPurchasedCredits, debitCredits, getBalance } from '../billing/wallet.js';
 import { breaker } from '../providers/circuitBreaker.js';
@@ -119,6 +120,17 @@ adminRoutes.get('/generations', async (req, res) => {
     [q.status ?? null, q.limit],
   );
   res.json({ items: rows });
+});
+
+adminRoutes.get('/invoices.csv', async (req, res) => {
+  const q = parse(z.object({ from: z.iso.date(), to: z.iso.date() }), req.query);
+  // `to` is inclusive for the caller; dates are IST calendar days.
+  const from = new Date(`${q.from}T00:00:00+05:30`);
+  const to = new Date(new Date(`${q.to}T00:00:00+05:30`).getTime() + 86_400_000);
+  await audit(req.user!.id, 'invoices.export', `${q.from}..${q.to}`, {});
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="invoices-${q.from}-to-${q.to}.csv"`);
+  res.send(await invoicesCsv(from, to));
 });
 
 adminRoutes.get('/audit', async (_req, res) => {

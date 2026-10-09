@@ -16,6 +16,7 @@ import { authRoutes } from './modules/auth/routes.js';
 import { billingRoutes, razorpayWebhook } from './modules/billing/routes.js';
 import { generationRoutes } from './modules/generations/routes.js';
 import { libraryRoutes } from './modules/library/routes.js';
+import { invoiceFromToken, renderInvoiceHtml } from './modules/billing/invoices.js';
 import { localStorage, verifyFileToken } from './modules/storage/storage.js';
 
 export function createApp() {
@@ -105,10 +106,19 @@ export function createApp() {
     res.send(data);
   });
 
+  // Signed, short-lived invoice links: printable HTML that the browser saves as PDF.
+  app.get('/invoices/:token', async (req, res) => {
+    const inv = await invoiceFromToken(req.params.token);
+    if (!inv) return void res.status(404).send('Link expired. Open the invoice again from Billing.');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.type('html').send(renderInvoiceHtml(inv));
+  });
+
   const webDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
   if (existsSync(webDist)) {
     app.use(express.static(webDist, { index: false, maxAge: '1h' }));
-    app.get(/^\/(?!api|files|metrics).*/, (_req, res) => res.sendFile(join(webDist, 'index.html')));
+    app.get(/^\/(?!api|files|metrics|invoices\/).*/, (_req, res) => res.sendFile(join(webDist, 'index.html')));
   }
 
   app.use(errorHandler);
