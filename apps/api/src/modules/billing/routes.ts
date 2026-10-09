@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { pool } from '../../db/pool.js';
 import { badRequest } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
+import { alert } from '../../lib/monitoring.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { rateLimit } from '../../middleware/rateLimit.js';
 import { parse } from '../../middleware/validate.js';
@@ -58,7 +59,11 @@ razorpayWebhook.post('/', async (req, res) => {
   }
   const eventId = req.header('x-razorpay-event-id');
   if (!eventId) throw badRequest('Missing event id');
-  const result = await rzp.handleWebhook(eventId, JSON.parse(raw.toString('utf8')));
+  const result = await rzp.handleWebhook(eventId, JSON.parse(raw.toString('utf8'))).catch((err) => {
+    // Razorpay retries, but a failing payment webhook means paid customers may be missing credits.
+    void alert('razorpay-webhook', `Razorpay webhook ${eventId} failed: ${(err as Error).message}`.slice(0, 300));
+    throw err;
+  });
   logger.info({ eventId, result }, 'razorpay webhook');
   res.json({ status: result });
 });

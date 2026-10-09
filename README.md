@@ -23,7 +23,7 @@ Emails listed in `ADMIN_EMAILS` become admins when they register.
 ## How a generation flows
 1. `POST /api/v1/generations/estimate {prompt}` → intent detection (`orchestrator/intent.ts`) → plan checks → candidate models ranked by admin priority, then quality or cost (`router.ts`). The response is an HMAC-signed quote that binds the user, a hash of the prompt, the price and the fallback chain, and expires after 10 minutes.
 2. `POST /api/v1/generations` with an `Idempotency-Key` header. In one transaction it checks the concurrency and daily limits, inserts the job and holds `max(credits across fallbacks)`.
-3. The worker tries each candidate in order. Outages (429, 5xx, timeouts) fall through to the next provider and count towards a circuit breaker. **A content or policy refusal is final and never routed to another provider.**
+3. The worker tries each candidate in order. Fast models (images, code) run to completion. Long-running models (video, 3D and music on Replicate) are **submitted and released**: the job holds no worker while the provider renders, and a worker checks on it again when it's due (5s, backing off to 30s). A few video users can't block everyone else's images. Outages (429, 5xx, timeouts) fall through to the next provider and count towards a circuit breaker. **A content or policy refusal is final and never routed to another provider.**
 4. On success the files are stored, the actual cost is charged (capped at the hold) and the rest is refunded. On failure, a timeout (reaper) or a user cancel, everything is refunded. Settlement is guarded by a status transition, so it happens exactly once.
 
 ## Plans (₹/month, editable in `billing/plans.ts`)
@@ -51,6 +51,13 @@ Write a `ProviderAdapter` in `apps/api/src/modules/providers/adapters/` (fill in
 - Prompts are screened with OpenAI's moderation endpoint when an OpenAI key is set.
 - Razorpay signatures are checked with constant-time comparison. Webhooks are deduplicated by event ID, and credits are granted idempotently.
 
+## Monitoring
+All optional; each one is off until its variable is set.
+- **Sentry** (`SENTRY_DSN`): unhandled API errors and worker failures. User info, cookies, headers, request bodies and query strings are never sent, since they can contain prompts, tokens and emails.
+- **Alerts** (`ALERT_WEBHOOK_URL`, Slack or Discord): a provider's circuit breaker trips; jobs time out and are refunded; queued jobs wait more than 5 minutes; a Razorpay webhook fails. Each alert is sent at most once per 15 minutes.
+- **Metrics** (`METRICS_TOKEN`): `GET /metrics` in Prometheus format, covering queue depth, jobs waiting on providers, the oldest queued job's age, credits on hold, and jobs and provider cost per provider over the last hour. Without the token the endpoint returns 404.
+- Every response carries an `X-Request-Id`, which is also written to the request log and shown in 500 errors so support can find a failing request.
+
 ## Must verify before launch (not confirmed here)
 - **Prices**: the USD figures in each adapter are planning estimates. Check them against the current pricing pages for OpenAI, Anthropic, Stability, Replicate and ElevenLabs.
 - **Model IDs and endpoints**: `OPENAI_CODE_MODEL` (default `gpt-4.1`), `ANTHROPIC_MODEL`, and especially the **ElevenLabs Music endpoint and parameters**, which could not be confirmed.
@@ -58,7 +65,7 @@ Write a `ProviderAdapter` in `apps/api/src/modules/providers/adapters/` (fill in
 - **Razorpay**: create the 4 plans in the dashboard, put their IDs in `RAZORPAY_PLAN_IDS`, and subscribe the webhook to `payment.captured`, `subscription.*` and `order.paid`.
 
 ## Not included yet
-GST invoices, and splitting long video jobs into submit/poll steps (today a running job occupies a worker slot).
+GST invoices.
 
 ## Tests
 `npm test` runs 57 unit and API tests against a real Postgres. They cover intent detection, wallet invariants (including concurrent holds), fallback, refunds, idempotency, quote tampering, plan gates, refresh-token reuse, webhooks, admin actions, email verification, password reset and storage quotas.

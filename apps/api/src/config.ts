@@ -63,6 +63,13 @@ const schema = z.object({
   RESEND_API_KEY: z.string().optional(),
   // Blocks generation until the email is verified; curbs free-credit farming with throwaway addresses.
   REQUIRE_EMAIL_VERIFICATION: bool.default(true),
+
+  // Observability (all optional).
+  SENTRY_DSN: z.string().url().optional(),
+  // Slack- or Discord-compatible incoming webhook for operational alerts.
+  ALERT_WEBHOOK_URL: z.string().url().optional(),
+  // Bearer token for GET /metrics (Prometheus format). Endpoint is disabled when unset.
+  METRICS_TOKEN: z.string().min(16).optional(),
 });
 
 export type Config = z.infer<typeof schema>;

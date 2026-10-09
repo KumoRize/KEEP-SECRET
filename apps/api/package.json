@@ -16,6 +16,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1145.0",
     "@aws-sdk/s3-request-presigner": "^3.1145.0",
+    "@sentry/node": "^11.6.0",
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "helmet": "^8.3.0",

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { config } from '../../config.js';
 import { pool, tx } from '../../db/pool.js';
 import { logger } from '../../lib/logger.js';
+import { alert, captureError } from '../../lib/monitoring.js';
 import { usdToCredits } from '../orchestrator/router.js';
 import { breaker } from '../providers/circuitBreaker.js';
 import { findModel, getAdapter, providerSettings } from '../providers/registry.js';
@@ -199,6 +200,19 @@ export async function reapStale(): Promise<number> {
   return n;
 }
 
+/** Alerts when jobs wait too long to start: workers are down, stuck or under-provisioned. */
+export async function checkBacklog(maxWaitSec = 300): Promise<{ queued: number; oldestSec: number }> {
+  const { rows: [r] } = await pool.query<{ queued: number; oldest_sec: number | null }>(
+    `SELECT count(*)::int AS queued, EXTRACT(EPOCH FROM now() - min(created_at))::int AS oldest_sec
+       FROM generations WHERE status = 'queued'`,
+  );
+  const oldestSec = r!.oldest_sec ?? 0;
+  if (oldestSec > maxWaitSec) {
+    await alert('backlog', `${r!.queued} generation(s) queued; the oldest has waited ${Math.round(oldestSec / 60)} min. Scale workers or check for a stuck provider.`);
+  }
+  return { queued: r!.queued, oldestSec };
+}
+
 export function startWorker(concurrency = config.WORKER_CONCURRENCY): { stop: () => Promise<void> } {
   let running = true;
   const loops: Promise<void>[] = [];
@@ -212,13 +226,18 @@ export function startWorker(concurrency = config.WORKER_CONCURRENCY): { stop: ()
         }
         await processGeneration(gen);
       } catch (err) {
-        logger.error({ err }, 'worker loop error');
+        captureError(err, { where: 'worker loop' });
         await new Promise((r) => setTimeout(r, 2000));
       }
     }
   };
   for (let i = 0; i < concurrency; i++) loops.push(loop());
-  const reaper = setInterval(() => reapStale().catch((err) => logger.error({ err }, 'reaper failed')), 60_000);
+  const reaper = setInterval(() => {
+    reapStale()
+      .then((n) => n > 0 && alert('reaper', `${n} generation(s) timed out and were refunded. Check provider status and worker health.`))
+      .catch((err) => captureError(err, { where: 'reaper' }));
+    checkBacklog().catch((err) => captureError(err, { where: 'backlog check' }));
+  }, 60_000);
   logger.info({ concurrency }, 'worker started');
   return {
     stop: async () => {
