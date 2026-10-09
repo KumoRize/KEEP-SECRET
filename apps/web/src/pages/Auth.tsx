@@ -2,14 +2,18 @@ import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { CATEGORY_META, Icon } from '../components/Icon';
+import { useSite } from '../lib/site';
 
 export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { login, register } = useAuth();
+  const site = useSite();
   const [params] = useSearchParams();
   const ref = params.get('ref') ?? (() => { try { return localStorage.getItem('ref'); } catch { return null; } })();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [setupCode, setSetupCode] = useState('');
+  const [ownerMode, setOwnerMode] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -22,7 +26,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     setError('');
     try {
       if (mode === 'login') await login(email, password);
-      else await register(email, password, name, ref ?? undefined);
+      else await register(email, password, name, ref ?? undefined, setupCode || undefined);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -42,6 +46,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           </div>
         </div>
         <form className="card glow stack" onSubmit={submit}>
+          {mode === 'register' && site && !site.signupsOpen && <p className="pill" style={{ alignSelf: 'flex-start' }}>Sign-ups are paused right now</p>}
           {mode === 'register' && ref && <p className="pill" style={{ alignSelf: 'flex-start' }}><Icon name="gift" size={14} /> Invited! Bonus credits after your first purchase</p>}
           {mode === 'register' && (
             <label>Name<input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></label>
@@ -52,11 +57,15 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             <input type="password" required minLength={mode === 'register' ? 10 : 1} value={password}
               onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
           </label>
+          {mode === 'register' && (ownerMode || /reserved/.test(error)) && (
+            <label>Owner setup code<input type="password" autoComplete="off" value={setupCode} onChange={(e) => setSetupCode(e.target.value)} /></label>
+          )}
           {error && <p className="error" role="alert">{error}</p>}
           <button className="primary lg" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create free account'}</button>
           {mode === 'login'
             ? <p className="muted small"><Link to="/forgot-password">Forgot password?</Link> · New here? <Link to="/register">Create an account</Link></p>
-            : <p className="muted small">Free plan includes 60 credits a month and free AI models. Have an account? <Link to="/login">Log in</Link></p>}
+            : <p className="muted small">Free plan includes 60 credits a month and free AI models. Have an account? <Link to="/login">Log in</Link>
+                {!ownerMode && <> · <button type="button" className="link small" onClick={() => setOwnerMode(true)}>I'm the owner</button></>}</p>}
           <p className="muted tiny"><Link to="/explore">Browse all AI models →</Link></p>
         </form>
       </div>

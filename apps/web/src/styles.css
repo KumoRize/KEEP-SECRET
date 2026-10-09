@@ -229,6 +229,7 @@ button.lg { min-height: 52px; padding: 12px 22px; font-size: 1.02rem; border-rad
   margin-top: auto; padding: 14px; border-radius: 16px; background: var(--grad-soft); border: 1px solid var(--border-strong);
 }
 .credit-card strong { font-size: 1.4rem; display: block; }
+.banner.announce { background: var(--grad-soft); }
 .banner {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; padding: 9px 16px; font-size: 0.9rem;
   background: linear-gradient(90deg, rgba(251, 191, 36, 0.15), rgba(244, 114, 182, 0.12)); border-bottom: 1px solid var(--border);

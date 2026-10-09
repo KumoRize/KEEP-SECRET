@@ -29,6 +29,24 @@ npm ci && npm run migrate && npm run dev:api   # and: npm run dev:web, npm run w
 ```
 Emails listed in `ADMIN_EMAILS` become admins when they register.
 
+## Running it as the owner (no code needed)
+Set three values once on the server: `OWNER_EMAIL` (your email), `OWNER_SETUP_CODE` (a private code only you know) and `SETTINGS_ENCRYPTION_KEY` (`openssl rand -hex 32`). Then sign up with your email, click **I'm the owner** and enter the code. Without the code nobody, including someone who knows your email, can claim the owner account. That account is the **only owner**. A database index allows exactly one owner, and the server re-applies `OWNER_EMAIL` at every start, so nobody else can take ownership. Then open **Owner dashboard**:
+- **Setup:** a live launch checklist (models, payments, email, GST, storage, alerts) with a **Fix** button for each item.
+- **API keys:** paste each provider key, with a link to where to get it. Keys are encrypted with AES-256-GCM, and only the last 4 characters are ever shown. Keys set in the server environment override dashboard keys and can't be changed here.
+- **Settings:** changes go live on every server within seconds, with no redeploy.
+  - plan prices, credits and limits; credit packs; markup, with a live per-plan margin preview; referral rewards;
+  - sign-ups on or off; maintenance mode (customers see a holding page while you keep full access); a site-wide announcement banner; email verification and moderation switches;
+  - business and GST details; Razorpay plan IDs;
+  - automation: the daily report hour, and auto-disabling of loss-making models.
+- **Staff (optional):** only you can make someone staff. Staff get support tools (Users, view Models) but never profit, settings, keys, roles, pricing or GST exports, and they can't touch your account.
+
+**Automatic, every day:**
+- a report by email (and Slack/Discord if connected) with yesterday's revenue, AI cost, profit, new users, failures and anything still missing from setup;
+- a loss guard that alerts you, or optionally disables a model, when its real cost exceeded what users paid over the last 7 days;
+- OpenRouter model sync, plan renewals and downgrades, refunds for failed or stuck jobs, and provider failover.
+
+Email verification turns itself on only once email sending works, so new users are never locked out before you connect Resend.
+
 ## Model universe
 - **Text, coding and agent models** come from OpenRouter. Its full model list is synced at startup and daily by the worker, or on demand from Admin > Models > Sync. Free models (`:free`, or zero price) cost **0 credits** and carry a note that their host may log prompts. Daily message caps per plan limit abuse.
 - **Image and video models** come from fal.ai. Curated defaults are seeded once: FLUX schnell, dev and 1.1 pro; Kling 2.1 Master; Veo 3.1 and Veo 3.1 Fast. Their IDs and duration rules were checked against fal's model pages; **verify the prices** before launch.
@@ -113,4 +131,4 @@ All optional; each one is off until its variable is set.
 Credit notes for refunds: refunds aren't automated yet, so issue credit notes manually for now. Government e-invoicing (IRN), which applies above an annual turnover threshold (₹5 crore when this was written; confirm with your CA).
 
 ## Tests
-`npm test` runs 105 unit and API tests against a real Postgres. They cover intent detection, wallet invariants (including concurrent holds), fallback, refunds, idempotency, quote tampering, plan gates, refresh-token reuse, webhooks, admin actions, email verification, password reset, storage quotas, long-running jobs, alerts and metrics, GST invoices, the model catalogue and OpenRouter sync, fal.ai submit/poll, streaming chat billing (free, paid, refunds, low balances, daily caps), research citations, agents (generator, sharing, privacy), developer API keys, referrals and the profit dashboard.
+`npm test` runs 120 unit and API tests against a real Postgres. They cover intent detection, wallet invariants (including concurrent holds), fallback, refunds, idempotency, quote tampering, plan gates, refresh-token reuse, webhooks, admin actions, email verification, password reset, storage quotas, long-running jobs, alerts and metrics, GST invoices, the model catalogue and OpenRouter sync, fal.ai submit/poll, streaming chat billing (free, paid, refunds, low balances, daily caps), research citations, agents (generator, sharing, privacy), developer API keys, referrals, the profit dashboard, the single-owner model and staff limits, live settings, encrypted key storage, maintenance and sign-up switches, the setup checklist, the daily report and the loss guard.

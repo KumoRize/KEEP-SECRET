@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { isStaff } from './api';
 import { useAuth } from './auth';
+import { useSite } from './lib/site';
 import { Layout } from './components/Layout';
 import { ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from './pages/AccountLinks';
 import { AdminPage } from './pages/Admin';
@@ -12,10 +14,21 @@ import { ExplorePage } from './pages/Explore';
 import { InvitePage } from './pages/Invite';
 import { LibraryPage } from './pages/Library';
 import { StudioPage } from './pages/Studio';
+import { MaintenancePage } from './pages/Maintenance';
 
 export function App() {
   const { me, loading } = useAuth();
+  const site = useSite();
   if (loading) return <div className="center muted"><div className="aurora" />Loading…</div>;
+  // Maintenance: customers see a holding page; the owner and staff keep full access.
+  if (site?.maintenance && !isStaff(me)) {
+    return (
+      <Routes>
+        <Route path="/login" element={<AuthPage mode="login" />} />
+        <Route path="*" element={<MaintenancePage message={site.maintenanceMessage} />} />
+      </Routes>
+    );
+  }
   if (!me) {
     return (
       <Routes>
@@ -44,7 +57,7 @@ export function App() {
         <Route path="/developer" element={<DeveloperPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
-        {me.user.role === 'admin' && <Route path="/admin" element={<AdminPage />} />}
+        {isStaff(me) && <Route path="/admin" element={<AdminPage />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

@@ -17,6 +17,7 @@ import { referralRoutes } from './modules/billing/referrals.js';
 import { adminCatalogRoutes, catalogRoutes } from './modules/catalog/routes.js';
 import { chatRoutes } from './modules/chat/routes.js';
 import { developerRoutes } from './modules/developer/routes.js';
+import { ownerRoutes, siteRoutes } from './modules/settings/routes.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { billingRoutes, razorpayWebhook } from './modules/billing/routes.js';
 import { generationRoutes } from './modules/generations/routes.js';
@@ -92,6 +93,8 @@ export function createApp() {
   app.use('/api/v1/billing', billingRoutes);
   app.use('/api/v1/generations', generationRoutes);
   app.use('/api/v1/library', libraryRoutes);
+  app.use('/api/v1/site', siteRoutes);
+  app.use('/api/v1/owner', ownerRoutes);
   app.use('/api/v1/catalog', catalogRoutes);
   app.use('/api/v1/chat', chatRoutes);
   app.use('/api/v1/agents', agentRoutes);

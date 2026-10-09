@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../../db/pool.js';
 import { AppError, badRequest, notFound } from '../../lib/errors.js';
-import { requireAdmin, requireAuth } from '../../middleware/auth.js';
+import { requireAdmin, requireAuth, requireOwner } from '../../middleware/auth.js';
 import { parse } from '../../middleware/validate.js';
 import { usdToCredits } from '../orchestrator/router.js';
 import { breaker } from '../providers/circuitBreaker.js';
@@ -139,7 +139,7 @@ const rowSchema = z.object({
   dataNote: z.string().max(400).default(''),
 });
 
-adminCatalogRoutes.post('/', async (req, res) => {
+adminCatalogRoutes.post('/', requireOwner, async (req, res) => {
   const b = parse(rowSchema, req.body);
   const id = `${b.providerId}:${b.model}`;
   const { rowCount } = await pool.query(
@@ -154,7 +154,7 @@ adminCatalogRoutes.post('/', async (req, res) => {
   res.status(201).json({ id });
 });
 
-adminCatalogRoutes.patch('/:id', async (req, res) => {
+adminCatalogRoutes.patch('/:id', requireOwner, async (req, res) => {
   const id = parse(z.string().max(260), req.params.id);
   const b = parse(rowSchema.partial().omit({ providerId: true, model: true }), req.body);
   const sets: string[] = [];
@@ -175,14 +175,14 @@ adminCatalogRoutes.patch('/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
-adminCatalogRoutes.delete('/:id', async (req, res) => {
+adminCatalogRoutes.delete('/:id', requireOwner, async (req, res) => {
   const { rowCount } = await pool.query(`DELETE FROM catalog_models WHERE id = $1`, [parse(z.string().max(260), req.params.id)]);
   if (!rowCount) throw notFound('Model not found');
   invalidateCatalog();
   res.status(204).end();
 });
 
-adminCatalogRoutes.post('/sync/openrouter', async (_req, res) => {
+adminCatalogRoutes.post('/sync/openrouter', requireOwner, async (_req, res) => {
   const result = await syncOpenRouter().catch((err: Error) => {
     throw new AppError(502, 'sync_failed', `OpenRouter sync failed: ${err.message}`);
   });

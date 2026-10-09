@@ -6,6 +6,7 @@ import { requireAuth } from '../../middleware/auth.js';
 import { rateLimit } from '../../middleware/rateLimit.js';
 import { parse } from '../../middleware/validate.js';
 import { getBalance } from '../billing/wallet.js';
+import { verificationEnforced } from '../../lib/mailer.js';
 import { getPlan } from '../billing/plans.js';
 import * as auth from './service.js';
 import { requestPasswordReset, resetPassword, sendVerificationEmail, verifyEmail } from './emailTokens.js';
@@ -38,8 +39,9 @@ authRoutes.post('/register', authLimiter, async (req, res) => {
   const body = parse(credentials.extend({
     name: z.string().trim().max(80).default(''),
     referralCode: z.string().trim().regex(/^[A-Za-z0-9]{4,16}$/).optional(),
+    setupCode: z.string().max(200).optional(),
   }), req.body);
-  const s = await auth.register(body.email, body.password, body.name, body.referralCode);
+  const s = await auth.register(body.email, body.password, body.name, body.referralCode, body.setupCode);
   setRefreshCookie(res, s.refreshToken);
   res.status(201).json({ user: s.user, accessToken: s.accessToken });
 });
@@ -73,7 +75,7 @@ authRoutes.get('/me', requireAuth, async (req, res) => {
   res.json({
     user: {
       id: u.id, email: u.email, role: u.role, emailVerified: Boolean(u.email_verified_at),
-      verificationRequired: config.REQUIRE_EMAIL_VERIFICATION, plan: getPlan(u.plan_id),
+      verificationRequired: verificationEnforced(), plan: getPlan(u.plan_id),
     },
     balance: await getBalance(u.id),
   });

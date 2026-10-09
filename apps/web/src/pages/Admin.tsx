@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { api, authHeaders } from '../api';
+import { useSearchParams } from 'react-router-dom';
+import { useAuth } from '../auth';
+import { KeysPanel } from './owner/Keys';
+import { SettingsPanel } from './owner/Settings';
+import { SetupPanel } from './owner/Setup';
+import { api, authHeaders, isOwner } from '../api';
 import { CATEGORY_META, Icon } from '../components/Icon';
 
 interface Stats {
@@ -22,39 +27,54 @@ interface Provider {
   id: string; name: string; configured: boolean; enabled: boolean; priority: number;
   circuit: { failures: number; open: boolean }; models: { id: string; modality: string; label: string; commercialUse: boolean }[];
 }
-interface User { id: string; email: string; plan_id: string; status: string; credits: number }
+interface User { id: string; email: string; role: 'user' | 'admin' | 'owner'; plan_id: string; status: string; credits: number }
 interface CatalogRow {
   id: string; provider_id: string; model: string; categories: string[]; label: string; is_free: boolean; enabled: boolean;
   featured: boolean; quality: number; pricing: Record<string, number>; source: string;
 }
 
 const inr = (n: number) => `${n < 0 ? '−' : ''}₹${Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+// Staff admins only see support tools; everything about money, keys and settings is the owner's.
 const TABS = [
-  { id: 'profit', label: 'Profit', icon: 'chart' },
-  { id: 'models', label: 'Models', icon: 'globe' },
-  { id: 'providers', label: 'Providers', icon: 'bolt' },
-  { id: 'users', label: 'Users', icon: 'shield' },
-  { id: 'invoices', label: 'GST export', icon: 'wallet' },
+  { id: 'setup', label: 'Setup', icon: 'check', owner: true },
+  { id: 'profit', label: 'Profit', icon: 'chart', owner: true },
+  { id: 'settings', label: 'Settings', icon: 'sparkles', owner: true },
+  { id: 'keys', label: 'API keys', icon: 'key', owner: true },
+  { id: 'models', label: 'Models', icon: 'globe', owner: false },
+  { id: 'providers', label: 'Providers', icon: 'bolt', owner: true },
+  { id: 'users', label: 'Users', icon: 'shield', owner: false },
+  { id: 'invoices', label: 'GST export', icon: 'wallet', owner: true },
 ] as const;
+type TabId = (typeof TABS)[number]['id'];
 
 export function AdminPage() {
-  const [tab, setTab] = useState<(typeof TABS)[number]['id']>('profit');
+  const { me } = useAuth();
+  const owner = isOwner(me);
+  const [params, setParams] = useSearchParams();
+  const tabs = TABS.filter((t) => owner || !t.owner);
+  const requested = params.get('tab') as TabId | null;
+  const tab: TabId = tabs.some((t) => t.id === requested) ? requested! : tabs[0]!.id;
+  const focus = params.get('focus') ?? undefined;
+  const setTab = (id: string, f?: string) => setParams(f ? { tab: id, focus: f } : { tab: id });
   return (
     <div className="stack">
       <div className="row wrap between">
-        <h1>Owner <span className="gradient-text">dashboard</span></h1>
+        <h1>{owner ? 'Owner' : 'Staff'} <span className="gradient-text">dashboard</span></h1>
         <div className="chips scroll" role="tablist">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'chip active' : 'chip'} onClick={() => setTab(t.id)}>
               <Icon name={t.icon} size={15} /> {t.label}
             </button>
           ))}
         </div>
       </div>
+      {tab === 'setup' && <SetupPanel go={setTab} />}
       {tab === 'profit' && <Profit />}
-      {tab === 'models' && <Models />}
+      {tab === 'settings' && <SettingsPanel focus={focus} />}
+      {tab === 'keys' && <KeysPanel focus={focus} />}
+      {tab === 'models' && <Models owner={owner} />}
       {tab === 'providers' && <Providers />}
-      {tab === 'users' && <Users />}
+      {tab === 'users' && <Users owner={owner} />}
       {tab === 'invoices' && <InvoiceExport />}
     </div>
   );
@@ -106,7 +126,7 @@ function Profit() {
   );
 }
 
-function Models() {
+function Models({ owner }: { owner: boolean }) {
   const [rows, setRows] = useState<CatalogRow[]>([]);
   const [q, setQ] = useState('');
   const [msg, setMsg] = useState('');
@@ -149,8 +169,8 @@ function Models() {
     <div className="stack">
       <div className="row wrap">
         <input className="grow" placeholder="Search catalog" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button onClick={sync}><Icon name="refresh" size={16} /> Sync OpenRouter</button>
-        <button className="primary" onClick={() => setAdding(!adding)}><Icon name="plus" size={16} /> Add model</button>
+        {owner && <button onClick={sync}><Icon name="refresh" size={16} /> Sync OpenRouter</button>}
+        {owner && <button className="primary" onClick={() => setAdding(!adding)}><Icon name="plus" size={16} /> Add model</button>}
       </div>
       {msg && <p className="small" role="status">{msg}</p>}
       {adding && (
@@ -178,8 +198,8 @@ function Models() {
                 <td className="small">{r.categories.join(', ')}</td>
                 <td className="small">{priceText(r.pricing)}</td>
                 <td className="muted small">{r.source}</td>
-                <td><input type="checkbox" style={{ width: 'auto' }} checked={r.featured} onChange={(e) => patch(r, { featured: e.target.checked })} aria-label={`Feature ${r.label}`} /></td>
-                <td><input type="checkbox" style={{ width: 'auto' }} checked={r.enabled} onChange={(e) => patch(r, { enabled: e.target.checked })} aria-label={`Enable ${r.label}`} /></td>
+                <td><input type="checkbox" style={{ width: 'auto' }} disabled={!owner} checked={r.featured} onChange={(e) => patch(r, { featured: e.target.checked })} aria-label={`Feature ${r.label}`} /></td>
+                <td><input type="checkbox" style={{ width: 'auto' }} disabled={!owner} checked={r.enabled} onChange={(e) => patch(r, { enabled: e.target.checked })} aria-label={`Enable ${r.label}`} /></td>
               </tr>
             ))}
             {shown.length === 0 && <tr><td colSpan={6} className="muted">No catalog models. Set OPENROUTER_API_KEY / FAL_KEY, then sync.</td></tr>}
@@ -220,7 +240,7 @@ function Providers() {
   );
 }
 
-function Users() {
+function Users({ owner }: { owner: boolean }) {
   const [users, setUsers] = useState<User[]>([]);
   const [q, setQ] = useState('');
   const [msg, setMsg] = useState('');
@@ -232,6 +252,9 @@ function Users() {
     const reason = window.prompt('Reason (audited)') ?? '';
     try { await api(`/admin/users/${u.id}/credits`, { method: 'POST', json: { amount, reason } }); void load(); } catch (e) { setMsg((e as Error).message); }
   };
+  const setRole = async (u: User, role: 'user' | 'admin') => {
+    try { await api(`/admin/users/${u.id}`, { method: 'PATCH', json: { role } }); void load(); } catch (e) { setMsg((e as Error).message); }
+  };
   const toggle = async (u: User) => {
     await api(`/admin/users/${u.id}`, { method: 'PATCH', json: { status: u.status === 'active' ? 'suspended' : 'active' } });
     void load();
@@ -242,13 +265,19 @@ function Users() {
       {msg && <p className="error">{msg}</p>}
       <div className="card scroll-x">
         <table className="table">
-          <thead><tr><th>Email</th><th>Plan</th><th>Credits</th><th /></tr></thead>
+          <thead><tr><th>Email</th><th>Role</th><th>Plan</th><th>Credits</th><th /></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
                 <td>{u.email}{u.status !== 'active' && <span className="status failed"> suspended</span>}</td>
+                <td>{u.role === 'owner' ? <span className="badge pro">Owner</span> : u.role === 'admin' ? <span className="badge">Staff</span> : 'Customer'}</td>
                 <td>{u.plan_id}</td><td>{u.credits}</td>
-                <td className="row"><button onClick={() => adjust(u)}>Credits</button><button onClick={() => toggle(u)}>{u.status === 'active' ? 'Suspend' : 'Restore'}</button></td>
+                <td className="row">
+                  {u.role !== 'owner' && (owner || u.role === 'user') && <button onClick={() => adjust(u)}>Credits</button>}
+                  {u.role !== 'owner' && (owner || u.role === 'user') && <button onClick={() => toggle(u)}>{u.status === 'active' ? 'Suspend' : 'Restore'}</button>}
+                  {owner && u.role === 'user' && <button onClick={() => setRole(u, 'admin')}>Make staff</button>}
+                  {owner && u.role === 'admin' && <button className="ghost" onClick={() => setRole(u, 'user')}>Remove staff</button>}
+                </td>
               </tr>
             ))}
           </tbody>
