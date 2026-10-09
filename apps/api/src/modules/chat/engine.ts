@@ -31,11 +31,19 @@ export async function resolveTextModel(mode: TextMode, planId: string, modelId?:
     if (!hit) throw new AppError(400, 'model_unavailable', 'That model is not available for this mode');
     return hit;
   }
+  return (await rankTextModels(mode, planId))[0]!;
+}
+
+/** Usable models for a mode, best first: free models first for the Free plan, paid first otherwise. */
+export async function rankTextModels(mode: TextMode, planId: string): Promise<CatalogRow[]> {
+  await loadCatalog();
+  const category = categoryFor(mode);
+  const usable = textModels().filter((r) => r.categories.includes(category));
   if (usable.length === 0) throw new AppError(503, 'no_provider_available', `No ${category} model is available right now`);
   const preferFree = planId === 'free';
   return [...usable].sort((a, b) =>
     (preferFree ? Number(b.is_free) - Number(a.is_free) : Number(a.is_free) - Number(b.is_free))
-    || Number(b.featured) - Number(a.featured) || b.quality - a.quality)[0]!;
+    || Number(b.featured) - Number(a.featured) || b.quality - a.quality);
 }
 
 export interface Reservation {
@@ -183,9 +191,16 @@ export async function executeTurn(
   return { text, citations: sources.map((s, i) => ({ n: i + 1, title: s.title, url: s.url })), credits: charge, status, error };
 }
 
-/** Helper for single-shot (non-conversation) completions, e.g. the agent generator. */
+/**
+ * Single-shot completion (e.g. the agent generator). Falls back through the top 3 ranked models when one
+ * fails without output; each failed attempt is refunded by executeTurn.
+ */
 export async function completeOnce(userId: string, planId: string, system: string, prompt: string): Promise<TurnResult> {
-  const row = await resolveTextModel('chat', planId);
-  const r = await reserveTurn({ userId, mode: 'chat', row, promptChars: system.length + prompt.length, userText: prompt, search: false });
-  return executeTurn(r, [{ role: 'system', content: system }, { role: 'user', content: prompt }], '', { signal: AbortSignal.timeout(120_000) });
+  let last: TurnResult | null = null;
+  for (const row of (await rankTextModels('chat', planId)).slice(0, 3)) {
+    const r = await reserveTurn({ userId, mode: 'chat', row, promptChars: system.length + prompt.length, userText: prompt, search: false });
+    last = await executeTurn(r, [{ role: 'system', content: system }, { role: 'user', content: prompt }], '', { signal: AbortSignal.timeout(120_000) });
+    if (last.status === 'succeeded') return last;
+  }
+  return last!;
 }

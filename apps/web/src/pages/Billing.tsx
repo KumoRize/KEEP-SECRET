@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Balance, type Plan } from '../api';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { BillingDetails } from '../components/BillingDetails';
 
@@ -81,13 +82,19 @@ export function BillingPage() {
   const current = me!.user.plan.id;
   return (
     <div className="stack">
-      <section className="card stack">
-        <h1>Credits</h1>
+      <div className="hero" style={{ textAlign: 'left' }}>
+        <span className="pill">Plans & credits</span>
+        <h1 style={{ marginTop: 12 }}>Power up with <span className="gradient-text">more credits</span></h1>
+        <p>One wallet for every model. Free models stay free on every plan.</p>
+      </div>
+      <section className="card glow stack">
+        <h2>Your balance</h2>
         <div className="row wrap">
           <span className="pill big">{me!.balance.total.toLocaleString('en-IN')} total</span>
           <span className="muted">{me!.balance.subscription} monthly · {me!.balance.purchased} purchased (never expire)</span>
         </div>
         {msg && <p role="status">{msg}</p>}
+        <Link to="/invite" className="small">Invite friends and earn free credits →</Link>
       </section>
 
       <h2>Plans</h2>
@@ -97,7 +104,8 @@ export function BillingPage() {
             <div className="row between"><strong>{p.name}</strong><span>{p.priceInr ? `${inr(p.priceInr)}/mo` : 'Free'}</span></div>
             <ul className="small">
               <li>{p.monthlyCredits.toLocaleString('en-IN')} credits / month</li>
-              <li>{p.modalities.length === 7 ? 'All 7 creation types' : `${p.modalities.length} creation types`}</li>
+              <li>{p.modalities.length === 7 ? 'All media types' : `${p.modalities.length} media types`} + chat, story, code, research & agents</li>
+              <li>{p.dailyMessages.toLocaleString('en-IN')} AI messages/day</li>
               <li>{p.dailyGenerations} generations/day · {p.maxConcurrent} at a time</li>
               {p.maxVideoSeconds > 0 && <li>Video up to {p.maxVideoSeconds}s</li>}
               <li>{p.commercialUse ? 'Commercial use' : 'Personal use only'}</li>

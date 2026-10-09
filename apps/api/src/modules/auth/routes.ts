@@ -71,7 +71,10 @@ authRoutes.post('/logout', async (req, res) => {
 authRoutes.get('/me', requireAuth, async (req, res) => {
   const u = req.user!;
   res.json({
-    user: { id: u.id, email: u.email, role: u.role, emailVerified: Boolean(u.email_verified_at), plan: getPlan(u.plan_id) },
+    user: {
+      id: u.id, email: u.email, role: u.role, emailVerified: Boolean(u.email_verified_at),
+      verificationRequired: config.REQUIRE_EMAIL_VERIFICATION, plan: getPlan(u.plan_id),
+    },
     balance: await getBalance(u.id),
   });
 });

@@ -81,7 +81,8 @@ export async function selectCandidates(opts: {
     (opts.strategy === 'cheapest' ? a.credits - b.credits || b.m.quality - a.m.quality : b.m.quality - a.m.quality || a.credits - b.credits),
   );
   if (opts.preferredModelId) {
-    const idx = priced.findIndex((p) => p.m.id === opts.preferredModelId);
+    // Catalog ids are per model; routing ids may carry a '#modality' suffix (multi-category text models).
+    const idx = priced.findIndex((p) => p.m.id === opts.preferredModelId || p.m.id.split('#')[0] === opts.preferredModelId);
     if (idx > 0) priced.unshift(...priced.splice(idx, 1));
   }
   return priced.slice(0, MAX_FALLBACKS).map(({ m, costUsd, credits }) => ({
