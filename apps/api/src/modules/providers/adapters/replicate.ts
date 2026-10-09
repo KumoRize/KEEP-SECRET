@@ -1,6 +1,6 @@
 import { config } from '../../../config.js';
-import { downloadBinary, providerFetch, sleep } from '../http.js';
-import type { GenerationRequest, Modality, ProviderAdapter, ProviderModel } from '../types.js';
+import { downloadBinary, providerFetch } from '../http.js';
+import type { GenerationRequest, Modality, PollResult, ProviderAdapter, ProviderModel } from '../types.js';
 import { ProviderError } from '../types.js';
 
 /**
@@ -40,11 +40,7 @@ const SLOTS: Slot[] = [
 ];
 
 const BASE = 'https://api.replicate.com/v1';
-const headers = (wait = false) => ({
-  Authorization: `Bearer ${config.REPLICATE_API_TOKEN}`,
-  'Content-Type': 'application/json',
-  ...(wait ? { Prefer: 'wait=60' } : {}),
-});
+const headers = () => ({ Authorization: `Bearer ${config.REPLICATE_API_TOKEN}`, 'Content-Type': 'application/json' });
 
 interface Prediction {
   id: string;
@@ -65,6 +61,7 @@ function slotModels(): ProviderModel[] {
       label: `Replicate ${ref.split(':')[0]}`,
       quality: s.quality,
       maxDurationSec: s.maxDurationSec,
+      async: true,
       license: {
         commercialUse: config.REPLICATE_COMMERCIAL_LICENSE_CONFIRMED,
         note: `Governed by the licence of ${ref} on Replicate; review before commercial use.`,
@@ -86,30 +83,32 @@ export const replicateAdapter: ProviderAdapter = {
   name: 'Replicate',
   isConfigured: () => Boolean(config.REPLICATE_API_TOKEN),
   models: slotModels,
-  async run(model, req, signal) {
+  async submit(model, req, signal) {
     const slot = SLOTS.find((s) => s.modality === model.modality)!;
     const [name, version] = model.model.split(':');
     const url = version ? `${BASE}/predictions` : `${BASE}/models/${name}/predictions`;
     const body = version ? { version, input: slot.input(req) } : { input: slot.input(req) };
-    let pred = (await (await providerFetch('replicate', url, {
-      method: 'POST', headers: headers(true), signal, body: JSON.stringify(body),
+    const pred = (await (await providerFetch('replicate', url, {
+      method: 'POST', headers: headers(), signal, body: JSON.stringify(body),
     })).json()) as Prediction;
-
-    let delay = 2000;
-    while (pred.status === 'starting' || pred.status === 'processing') {
-      await sleep(delay, signal);
-      delay = Math.min(delay * 1.5, 15_000);
-      pred = (await (await providerFetch('replicate', `${BASE}/predictions/${pred.id}`, { headers: headers(), signal })).json()) as Prediction;
-    }
+    if (!pred.id) throw new ProviderError('replicate: no prediction id', 'retriable');
+    return { externalId: pred.id };
+  },
+  async poll(model, externalId, _req, signal): Promise<PollResult> {
+    const pred = (await (await providerFetch('replicate', `${BASE}/predictions/${encodeURIComponent(externalId)}`, {
+      headers: headers(), signal,
+    })).json()) as Prediction;
+    if (pred.status === 'starting' || pred.status === 'processing') return { status: 'pending' };
     if (pred.status !== 'succeeded') {
       const msg = pred.error ?? pred.status;
       // Replicate reports safety-checker blocks as failed predictions with an NSFW/sensitive message.
       const kind = /nsfw|sensitive|safety|flagged/i.test(msg) ? 'rejected' : 'retriable';
       throw new ProviderError(`replicate: ${msg}`.slice(0, 300), kind);
     }
+    const slot = SLOTS.find((s) => s.modality === model.modality)!;
     const out = firstUrl(pred.output);
     if (!out) throw new ProviderError('replicate: no output URL', 'retriable');
     const { data, contentType } = await downloadBinary('replicate', out, signal);
-    return { files: [{ filename: `output.${slot.ext}`, contentType, data }] };
+    return { status: 'done', result: { files: [{ filename: `output.${slot.ext}`, contentType, data }] } };
   },
 };

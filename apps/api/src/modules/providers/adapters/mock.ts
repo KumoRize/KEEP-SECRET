@@ -1,5 +1,5 @@
 import { config } from '../../../config.js';
-import type { Modality, OutputFile, ProviderAdapter, ProviderModel } from '../types.js';
+import type { Modality, OutputFile, PollResult, ProviderAdapter, ProviderModel } from '../types.js';
 import { ProviderError } from '../types.js';
 
 /** Deterministic offline provider for local development and tests. Refused in production by config. */
@@ -36,6 +36,14 @@ function output(modality: Modality, prompt: string, durationSec: number): Output
   }
 }
 
+const pollsSeen = new Map<string, number>();
+
+// Test hooks: prompts containing these markers simulate provider failures.
+function simulateFailures(prompt: string): void {
+  if (prompt.includes('[mock:fail]')) throw new ProviderError('mock: simulated outage', 'retriable');
+  if (prompt.includes('[mock:reject]')) throw new ProviderError('mock: content rejected', 'rejected');
+}
+
 const ALL: Modality[] = ['image', 'video', '3d', 'website', 'app', 'game', 'music'];
 
 export const mockAdapter: ProviderAdapter = {
@@ -45,13 +53,26 @@ export const mockAdapter: ProviderAdapter = {
   models: () => ALL.map<ProviderModel>((m) => ({
     id: `mock:${m}`, providerId: 'mock', model: `mock-${m}`, modality: m, label: `Mock ${m}`, quality: 1,
     maxDurationSec: m === 'video' ? 10 : m === 'music' ? 300 : undefined,
+    async: m === 'video', // exercises the submit/poll path like a real video provider
     license: { commercialUse: true, note: 'Synthetic placeholder output.' },
     estimateCostUsd: () => 0.001,
   })),
   async run(model, req) {
-    // Test hooks: prompts containing these markers simulate provider failures.
-    if (req.prompt.includes('[mock:fail]')) throw new ProviderError('mock: simulated outage', 'retriable');
-    if (req.prompt.includes('[mock:reject]')) throw new ProviderError('mock: content rejected', 'rejected');
+    simulateFailures(req.prompt);
     return { files: output(model.modality, req.prompt, req.params.durationSec ?? 5) };
+  },
+  async submit(_model, req) {
+    simulateFailures(req.prompt);
+    pollsSeen.set(req.generationId, 0);
+    return { externalId: `mock-${req.generationId}` };
+  },
+  // Pending on the first poll, done on the second, like a provider that takes a while.
+  async poll(model, _externalId, req): Promise<PollResult> {
+    if (req.prompt.includes('[mock:pollfail]')) throw new ProviderError('mock: render failed', 'retriable');
+    const seen = (pollsSeen.get(req.generationId) ?? 0) + 1;
+    pollsSeen.set(req.generationId, seen);
+    if (seen < 2) return { status: 'pending' };
+    pollsSeen.delete(req.generationId);
+    return { status: 'done', result: { files: output(model.modality, req.prompt, req.params.durationSec ?? 5) } };
   },
 };
